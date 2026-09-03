@@ -1,6 +1,5 @@
 .env
 __pycache__/
 *.pyc
-data/
 reports/
 real_wage_source
