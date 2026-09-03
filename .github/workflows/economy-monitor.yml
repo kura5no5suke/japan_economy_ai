@@ -55,6 +55,11 @@ jobs:
       - name: Run risk calculation
         run: python risk.py
 
+      - name: Run risk spike alert
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python risk_spike_alert.py
+
       - name: Send Discord notification
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
