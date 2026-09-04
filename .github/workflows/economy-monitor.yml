@@ -52,6 +52,9 @@ jobs:
           ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}
         run: python consumption.py
 
+      - name: Run BOJ rate
+        run: python boj.py
+
       - name: Run risk calculation
         run: python risk.py
 

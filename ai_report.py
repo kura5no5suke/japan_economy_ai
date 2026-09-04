@@ -4,6 +4,7 @@ import requests
 from datetime import datetime
 from dotenv import load_dotenv
 
+
 DB_PATH = "data/economy.db"
 REPORT_DIR = "reports"
 
@@ -12,10 +13,12 @@ GDP_INDICATOR = "GDP_実質_前年同期比"
 UNEMPLOYMENT_INDICATOR = "完全失業率"
 REAL_WAGE_INDICATOR = "実質賃金_前年比"
 CONSUMPTION_INDICATOR = "個人消費_前年同月比"
+BOJ_RATE_INDICATOR = "basic_loan_rate"
 
 load_dotenv()
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+
 OLLAMA_URL = "http://localhost:11434/api/generate"
 OLLAMA_MODEL = "qwen3:8b"
 
@@ -33,6 +36,7 @@ def get_latest_values(indicator, limit=2):
     """, (indicator, limit))
 
     rows = cur.fetchall()
+
     conn.close()
 
     return rows
@@ -52,32 +56,45 @@ def get_latest_risk_history(limit=2):
             unemployment_risk,
             real_wage_risk,
             consumption_risk,
+            boj_rate_risk,
             total_risk,
             risk_status,
             economic_condition,
             anomaly_level
         FROM risk_history
+        WHERE data_key LIKE '%BOJ_RATE=%'
         ORDER BY id DESC
         LIMIT ?
     """, (limit,))
 
     rows = cur.fetchall()
+
     conn.close()
 
     return rows
 
 
 def get_real_wage_decline_streak():
-    rows = get_latest_values(REAL_WAGE_INDICATOR, 60)
+    rows = get_latest_values(
+        REAL_WAGE_INDICATOR,
+        60
+    )
 
     if len(rows) < 2:
         return 0
 
-    rows = sorted(rows, key=lambda x: x[0])
+    rows = sorted(
+        rows,
+        key=lambda x: x[0]
+    )
 
     streak = 0
 
-    for i in range(len(rows) - 1, 0, -1):
+    for i in range(
+        len(rows) - 1,
+        0,
+        -1
+    ):
         current_value = rows[i][1]
         previous_value = rows[i - 1][1]
 
@@ -89,180 +106,395 @@ def get_real_wage_decline_streak():
     return streak
 
 
+def get_direction(
+    latest_value,
+    previous_value
+):
+    if latest_value > previous_value:
+        return "上昇した"
+
+    if latest_value < previous_value:
+        return "低下した"
+
+    return "変化していない"
+
+
 def build_fact_texts():
-    cpi_rows = get_latest_values(CPI_INDICATOR, 2)
-    gdp_rows = get_latest_values(GDP_INDICATOR, 2)
-    unemployment_rows = get_latest_values(UNEMPLOYMENT_INDICATOR, 2)
-    real_wage_rows = get_latest_values(REAL_WAGE_INDICATOR, 2)
-    consumption_rows = get_latest_values(CONSUMPTION_INDICATOR, 2)
+    cpi_rows = get_latest_values(
+        CPI_INDICATOR,
+        2
+    )
+
+    gdp_rows = get_latest_values(
+        GDP_INDICATOR,
+        2
+    )
+
+    unemployment_rows = get_latest_values(
+        UNEMPLOYMENT_INDICATOR,
+        2
+    )
+
+    real_wage_rows = get_latest_values(
+        REAL_WAGE_INDICATOR,
+        2
+    )
+
+    consumption_rows = get_latest_values(
+        CONSUMPTION_INDICATOR,
+        2
+    )
+
+    boj_rate_rows = get_latest_values(
+        BOJ_RATE_INDICATOR,
+        2
+    )
 
     if len(cpi_rows) < 2:
-        raise RuntimeError("CPIの比較データが不足しています。")
+        raise RuntimeError(
+            "CPIの比較データが不足しています。"
+        )
 
     if len(gdp_rows) < 2:
-        raise RuntimeError("GDPの比較データが不足しています。")
+        raise RuntimeError(
+            "GDPの比較データが不足しています。"
+        )
 
     if len(unemployment_rows) < 2:
-        raise RuntimeError("完全失業率の比較データが不足しています。")
+        raise RuntimeError(
+            "完全失業率の比較データが不足しています。"
+        )
 
     if len(real_wage_rows) < 2:
-        raise RuntimeError("実質賃金の比較データが不足しています。")
+        raise RuntimeError(
+            "実質賃金の比較データが不足しています。"
+        )
 
     if len(consumption_rows) < 2:
-        raise RuntimeError("個人消費の比較データが不足しています。")
+        raise RuntimeError(
+            "個人消費の比較データが不足しています。"
+        )
 
-    cpi_latest_date, cpi_latest_value, _ = cpi_rows[0]
-    cpi_previous_date, cpi_previous_value, _ = cpi_rows[1]
+    if len(boj_rate_rows) < 2:
+        raise RuntimeError(
+            "日銀金利の比較データが不足しています。"
+        )
 
-    gdp_latest_date, gdp_latest_value, _ = gdp_rows[0]
-    gdp_previous_date, gdp_previous_value, _ = gdp_rows[1]
+    (
+        cpi_latest_date,
+        cpi_latest_value,
+        _
+    ) = cpi_rows[0]
 
-    unemployment_latest_date, unemployment_latest_value, _ = unemployment_rows[0]
-    unemployment_previous_date, unemployment_previous_value, _ = unemployment_rows[1]
+    (
+        cpi_previous_date,
+        cpi_previous_value,
+        _
+    ) = cpi_rows[1]
 
-    real_wage_latest_date, real_wage_latest_value, _ = real_wage_rows[0]
-    real_wage_previous_date, real_wage_previous_value, _ = real_wage_rows[1]
+    (
+        gdp_latest_date,
+        gdp_latest_value,
+        _
+    ) = gdp_rows[0]
 
-    consumption_latest_date, consumption_latest_value, _ = consumption_rows[0]
-    consumption_previous_date, consumption_previous_value, _ = consumption_rows[1]
+    (
+        gdp_previous_date,
+        gdp_previous_value,
+        _
+    ) = gdp_rows[1]
 
-    if cpi_latest_value > cpi_previous_value:
-        cpi_direction = "上昇した"
-    elif cpi_latest_value < cpi_previous_value:
-        cpi_direction = "低下した"
-    else:
-        cpi_direction = "変化していない"
+    (
+        unemployment_latest_date,
+        unemployment_latest_value,
+        _
+    ) = unemployment_rows[0]
 
-    if gdp_latest_value > gdp_previous_value:
-        gdp_direction = "上昇した"
-    elif gdp_latest_value < gdp_previous_value:
-        gdp_direction = "低下した"
-    else:
-        gdp_direction = "変化していない"
+    (
+        unemployment_previous_date,
+        unemployment_previous_value,
+        _
+    ) = unemployment_rows[1]
 
-    if unemployment_latest_value < unemployment_previous_value:
-        unemployment_direction = "低下した"
-    elif unemployment_latest_value > unemployment_previous_value:
-        unemployment_direction = "上昇した"
-    else:
-        unemployment_direction = "変化していない"
+    (
+        real_wage_latest_date,
+        real_wage_latest_value,
+        _
+    ) = real_wage_rows[0]
 
-    if real_wage_latest_value > real_wage_previous_value:
-        real_wage_direction = "上昇した"
-    elif real_wage_latest_value < real_wage_previous_value:
-        real_wage_direction = "低下した"
-    else:
-        real_wage_direction = "変化していない"
+    (
+        real_wage_previous_date,
+        real_wage_previous_value,
+        _
+    ) = real_wage_rows[1]
 
-    if consumption_latest_value > consumption_previous_value:
-        consumption_direction = "上昇した"
-    elif consumption_latest_value < consumption_previous_value:
-        consumption_direction = "低下した"
-    else:
-        consumption_direction = "変化していない"
+    (
+        consumption_latest_date,
+        consumption_latest_value,
+        _
+    ) = consumption_rows[0]
+
+    (
+        consumption_previous_date,
+        consumption_previous_value,
+        _
+    ) = consumption_rows[1]
+
+    (
+        boj_rate_latest_date,
+        boj_rate_latest_value,
+        _
+    ) = boj_rate_rows[0]
+
+    (
+        boj_rate_previous_date,
+        boj_rate_previous_value,
+        _
+    ) = boj_rate_rows[1]
+
+    cpi_direction = get_direction(
+        cpi_latest_value,
+        cpi_previous_value
+    )
+
+    gdp_direction = get_direction(
+        gdp_latest_value,
+        gdp_previous_value
+    )
+
+    unemployment_direction = get_direction(
+        unemployment_latest_value,
+        unemployment_previous_value
+    )
+
+    real_wage_direction = get_direction(
+        real_wage_latest_value,
+        real_wage_previous_value
+    )
+
+    consumption_direction = get_direction(
+        consumption_latest_value,
+        consumption_previous_value
+    )
+
+    boj_rate_direction = get_direction(
+        boj_rate_latest_value,
+        boj_rate_previous_value
+    )
 
     cpi_fact = (
-        f"CPIの前年同月比は、前回の{cpi_previous_value}%から"
-        f"最新の{cpi_latest_value}%へ{cpi_direction}。"
+        f"CPIの前年同月比は、"
+        f"前回の{cpi_previous_value}%から"
+        f"最新の{cpi_latest_value}%へ"
+        f"{cpi_direction}。"
     )
 
     gdp_fact = (
-        f"実質GDPの前年同期比は、前回の{gdp_previous_value}%から"
-        f"最新の{gdp_latest_value}%へ{gdp_direction}。"
+        f"実質GDPの前年同期比は、"
+        f"前回の{gdp_previous_value}%から"
+        f"最新の{gdp_latest_value}%へ"
+        f"{gdp_direction}。"
     )
 
     unemployment_fact = (
-        f"完全失業率は、前月の{unemployment_previous_value}%から"
-        f"最新の{unemployment_latest_value}%へ{unemployment_direction}。"
+        f"完全失業率は、"
+        f"前月の{unemployment_previous_value}%から"
+        f"最新の{unemployment_latest_value}%へ"
+        f"{unemployment_direction}。"
     )
 
     real_wage_fact = (
-        f"実質賃金の前年同月比は、前回の{real_wage_previous_value}%から"
-        f"最新の{real_wage_latest_value}%へ{real_wage_direction}。"
+        f"実質賃金の前年同月比は、"
+        f"前回の{real_wage_previous_value}%から"
+        f"最新の{real_wage_latest_value}%へ"
+        f"{real_wage_direction}。"
     )
 
     consumption_fact = (
-        f"個人消費の前年同月比は、前回の{consumption_previous_value}%から"
-        f"最新の{consumption_latest_value}%へ{consumption_direction}。"
+        f"個人消費の前年同月比は、"
+        f"前回の{consumption_previous_value}%から"
+        f"最新の{consumption_latest_value}%へ"
+        f"{consumption_direction}。"
     )
 
-    decline_streak = get_real_wage_decline_streak()
+    boj_rate_fact = (
+        f"日銀の基準割引率および基準貸付利率は、"
+        f"前回の{boj_rate_previous_value}%から"
+        f"最新の{boj_rate_latest_value}%へ"
+        f"{boj_rate_direction}。"
+    )
+
+    decline_streak = (
+        get_real_wage_decline_streak()
+    )
 
     return {
-        "cpi_latest_date": cpi_latest_date,
-        "cpi_previous_date": cpi_previous_date,
-        "cpi_latest_value": cpi_latest_value,
-        "cpi_previous_value": cpi_previous_value,
+        "cpi_latest_date":
+            cpi_latest_date,
 
-        "gdp_latest_date": gdp_latest_date,
-        "gdp_previous_date": gdp_previous_date,
-        "gdp_latest_value": gdp_latest_value,
-        "gdp_previous_value": gdp_previous_value,
+        "cpi_previous_date":
+            cpi_previous_date,
 
-        "unemployment_latest_date": unemployment_latest_date,
-        "unemployment_previous_date": unemployment_previous_date,
-        "unemployment_latest_value": unemployment_latest_value,
-        "unemployment_previous_value": unemployment_previous_value,
+        "cpi_latest_value":
+            cpi_latest_value,
 
-        "real_wage_latest_date": real_wage_latest_date,
-        "real_wage_previous_date": real_wage_previous_date,
-        "real_wage_latest_value": real_wage_latest_value,
-        "real_wage_previous_value": real_wage_previous_value,
+        "cpi_previous_value":
+            cpi_previous_value,
 
-        "consumption_latest_date": consumption_latest_date,
-        "consumption_previous_date": consumption_previous_date,
-        "consumption_latest_value": consumption_latest_value,
-        "consumption_previous_value": consumption_previous_value,
+        "gdp_latest_date":
+            gdp_latest_date,
 
-        "cpi_fact": cpi_fact,
-        "gdp_fact": gdp_fact,
-        "unemployment_fact": unemployment_fact,
-        "real_wage_fact": real_wage_fact,
-        "consumption_fact": consumption_fact,
-        "real_wage_decline_streak": decline_streak,
+        "gdp_previous_date":
+            gdp_previous_date,
+
+        "gdp_latest_value":
+            gdp_latest_value,
+
+        "gdp_previous_value":
+            gdp_previous_value,
+
+        "unemployment_latest_date":
+            unemployment_latest_date,
+
+        "unemployment_previous_date":
+            unemployment_previous_date,
+
+        "unemployment_latest_value":
+            unemployment_latest_value,
+
+        "unemployment_previous_value":
+            unemployment_previous_value,
+
+        "real_wage_latest_date":
+            real_wage_latest_date,
+
+        "real_wage_previous_date":
+            real_wage_previous_date,
+
+        "real_wage_latest_value":
+            real_wage_latest_value,
+
+        "real_wage_previous_value":
+            real_wage_previous_value,
+
+        "consumption_latest_date":
+            consumption_latest_date,
+
+        "consumption_previous_date":
+            consumption_previous_date,
+
+        "consumption_latest_value":
+            consumption_latest_value,
+
+        "consumption_previous_value":
+            consumption_previous_value,
+
+        "boj_rate_latest_date":
+            boj_rate_latest_date,
+
+        "boj_rate_previous_date":
+            boj_rate_previous_date,
+
+        "boj_rate_latest_value":
+            boj_rate_latest_value,
+
+        "boj_rate_previous_value":
+            boj_rate_previous_value,
+
+        "cpi_fact":
+            cpi_fact,
+
+        "gdp_fact":
+            gdp_fact,
+
+        "unemployment_fact":
+            unemployment_fact,
+
+        "real_wage_fact":
+            real_wage_fact,
+
+        "consumption_fact":
+            consumption_fact,
+
+        "boj_rate_fact":
+            boj_rate_fact,
+
+        "real_wage_decline_streak":
+            decline_streak,
     }
 
 
-def build_reason_text(facts, current_risk):
+def build_reason_text(
+    facts,
+    current_risk
+):
     return (
         f"{facts['cpi_fact']}\n"
         f"{facts['gdp_fact']}\n"
         f"{facts['unemployment_fact']}\n"
         f"{facts['real_wage_fact']}\n"
-        f"連続低下は{facts['real_wage_decline_streak']}か月である。\n"
+        f"連続低下は"
+        f"{facts['real_wage_decline_streak']}"
+        f"か月である。\n"
         f"{facts['consumption_fact']}\n"
-        f"総合リスクは{current_risk['total_risk']} / 100で、"
-        f"総合判定は{current_risk['risk_status']}。"
+        f"{facts['boj_rate_fact']}\n"
+        f"総合リスクは"
+        f"{current_risk['total_risk']} / 100で、"
+        f"総合判定は"
+        f"{current_risk['risk_status']}。"
     )
 
 
-def build_prompt(facts, current_risk, previous_risk, reason_text):
-    previous_risk_text = "データなし"
-
-    if previous_risk is not None:
-        previous_risk_text = f"{previous_risk['total_risk']}"
-
+def calculate_risk_change(
+    current_risk,
+    previous_risk
+):
     if previous_risk is None:
-        risk_change_text = "比較なし"
-        risk_change_status = "🟢 初回計算"
-    else:
-        change = round(
-            current_risk["total_risk"] - previous_risk["total_risk"],
-            2
+        return (
+            "比較なし",
+            "🟢 初回計算"
         )
 
-        if change >= 10:
-            risk_change_status = "🔴 急上昇"
-        elif change >= 5:
-            risk_change_status = "🟠 上昇"
-        elif change <= -10:
-            risk_change_status = "🟢 大幅低下"
-        elif change <= -5:
-            risk_change_status = "🟢 低下"
-        else:
-            risk_change_status = "🟢 大きな変化なし"
+    change = round(
+        current_risk["total_risk"]
+        - previous_risk["total_risk"],
+        2
+    )
 
-        risk_change_text = f"{change}"
+    if change >= 10:
+        status = "🔴 急上昇"
+    elif change >= 5:
+        status = "🟠 上昇"
+    elif change <= -10:
+        status = "🟢 大幅低下"
+    elif change <= -5:
+        status = "🟢 低下"
+    else:
+        status = "🟢 大きな変化なし"
+
+    return change, status
+
+
+def build_prompt(
+    facts,
+    current_risk,
+    previous_risk,
+    reason_text
+):
+    if previous_risk is None:
+        previous_risk_text = "データなし"
+    else:
+        previous_risk_text = (
+            previous_risk["total_risk"]
+        )
+
+    (
+        risk_change_text,
+        risk_change_status
+    ) = calculate_risk_change(
+        current_risk,
+        previous_risk
+    )
 
     prompt = f"""
 あなたは日本経済監視AIです。
@@ -283,6 +515,8 @@ def build_prompt(facts, current_risk, previous_risk, reason_text):
 - GDPは必ず「前年同期比」と表現する。
 - 実質賃金は必ず「前年同月比」と表現する。
 - 個人消費は必ず「前年同月比」と表現する。
+- 日銀金利は「基準割引率および基準貸付利率」と表現する。
+- 日銀金利を「政策金利」と言い換えない。
 - 判断理由はPython生成済みの文章をそのまま使用する。
 - 判断理由の文章を書き換えない。
 - 思考過程を出力しない。
@@ -306,6 +540,9 @@ def build_prompt(facts, current_risk, previous_risk, reason_text):
 ■ 個人消費
 {facts['consumption_fact']}
 
+■ 日銀金利
+{facts['boj_rate_fact']}
+
 【判断理由】
 {reason_text}
 
@@ -315,6 +552,7 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 完全失業率リスク: {current_risk['unemployment_risk']} / 100
 実質賃金リスク: {current_risk['real_wage_risk']} / 100
 個人消費リスク: {current_risk['consumption_risk']} / 100
+日銀金利リスク: {current_risk['boj_rate_risk']} / 100
 総合リスク: {current_risk['total_risk']} / 100
 総合判定: {current_risk['risk_status']}
 
@@ -343,10 +581,13 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 
 ■ 実質賃金
 {facts['real_wage_fact']}
-連続低下は{facts['real_wage_decline_streak']}か月である
+連続低下は{facts['real_wage_decline_streak']}か月である。
 
 ■ 個人消費
 {facts['consumption_fact']}
+
+■ 日銀金利
+{facts['boj_rate_fact']}
 
 ■ リスク
 CPIリスク: {current_risk['cpi_risk']} / 100
@@ -354,6 +595,7 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 完全失業率リスク: {current_risk['unemployment_risk']} / 100
 実質賃金リスク: {current_risk['real_wage_risk']} / 100
 個人消費リスク: {current_risk['consumption_risk']} / 100
+日銀金利リスク: {current_risk['boj_rate_risk']} / 100
 総合リスク: {current_risk['total_risk']} / 100
 総合判定: {current_risk['risk_status']}
 
@@ -374,7 +616,7 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 {reason_text}
 
 ■ 注意事項
-この5指標だけでは日本経済全体を完全には判断できない。
+この6指標だけでは日本経済全体を完全には判断できない。
 """
 
     return prompt
@@ -392,95 +634,185 @@ def call_ollama(prompt):
             timeout=300
         )
 
-        print("Ollama HTTPステータス:", response.status_code)
+        print(
+            "Ollama HTTPステータス:",
+            response.status_code
+        )
 
         if response.status_code != 200:
-            print("Ollama呼び出し失敗")
-            print(response.text)
+            print(
+                "Ollama呼び出し失敗"
+            )
+
+            print(
+                response.text
+            )
+
             return None
 
         data = response.json()
-        result = data.get("response", "").strip()
+
+        result = data.get(
+            "response",
+            ""
+        ).strip()
 
         if not result:
-            print("Ollamaから空の回答が返されました。")
+            print(
+                "Ollamaから空の回答が"
+                "返されました。"
+            )
+
             return None
 
         return result
 
     except Exception as e:
-        print("Ollama呼び出しエラー:", e)
+        print(
+            "Ollama呼び出しエラー:",
+            e
+        )
+
         return None
 
 
 def save_report(text):
-    os.makedirs(REPORT_DIR, exist_ok=True)
+    os.makedirs(
+        REPORT_DIR,
+        exist_ok=True
+    )
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime(
+        "%Y%m%d_%H%M%S"
+    )
 
     file_path = os.path.join(
         REPORT_DIR,
         f"report_{timestamp}.txt"
     )
 
-    with open(file_path, "w", encoding="utf-8") as f:
+    with open(
+        file_path,
+        "w",
+        encoding="utf-8"
+    ) as f:
         f.write(text)
 
-    print("レポート保存:", file_path)
+    print(
+        "レポート保存:",
+        file_path
+    )
 
     return file_path
 
 
 def send_discord(message):
     if not DISCORD_WEBHOOK_URL:
-        print("Discord Webhook URLが設定されていません。")
+        print(
+            "Discord Webhook URLが"
+            "設定されていません。"
+        )
+
         return False
 
     try:
         response = requests.post(
             DISCORD_WEBHOOK_URL,
-            json={"content": message},
+            json={
+                "content": message
+            },
             timeout=30
         )
 
-        print("Discord HTTPステータス:", response.status_code)
+        print(
+            "Discord HTTPステータス:",
+            response.status_code
+        )
 
-        if response.status_code in (200, 204):
-            print("Discord送信成功")
+        if response.status_code in (
+            200,
+            204
+        ):
+            print(
+                "Discord送信成功"
+            )
+
             return True
 
-        print("Discord送信失敗")
-        print(response.text)
+        print(
+            "Discord送信失敗"
+        )
+
+        print(
+            response.text
+        )
 
         return False
 
     except Exception as e:
-        print("Discord送信エラー:", e)
+        print(
+            "Discord送信エラー:",
+            e
+        )
+
         return False
+
+
+def row_to_risk_dict(row):
+    return {
+        "id":
+            row[0],
+
+        "calculated_at":
+            row[1],
+
+        "data_key":
+            row[2],
+
+        "cpi_risk":
+            row[3],
+
+        "gdp_risk":
+            row[4],
+
+        "unemployment_risk":
+            row[5],
+
+        "real_wage_risk":
+            row[6],
+
+        "consumption_risk":
+            row[7],
+
+        "boj_rate_risk":
+            row[8],
+
+        "total_risk":
+            row[9],
+
+        "risk_status":
+            row[10],
+
+        "economic_condition":
+            row[11],
+
+        "anomaly_level":
+            row[12],
+    }
 
 
 def get_current_risk():
     rows = get_latest_risk_history(1)
 
     if not rows:
-        raise RuntimeError("risk_historyにデータがありません。")
+        raise RuntimeError(
+            "6指標版のrisk_historyに"
+            "データがありません。"
+        )
 
-    row = rows[0]
-
-    return {
-        "id": row[0],
-        "calculated_at": row[1],
-        "data_key": row[2],
-        "cpi_risk": row[3],
-        "gdp_risk": row[4],
-        "unemployment_risk": row[5],
-        "real_wage_risk": row[6],
-        "consumption_risk": row[7],
-        "total_risk": row[8],
-        "risk_status": row[9],
-        "economic_condition": row[10],
-        "anomaly_level": row[11],
-    }
+    return row_to_risk_dict(
+        rows[0]
+    )
 
 
 def get_previous_risk():
@@ -489,32 +821,30 @@ def get_previous_risk():
     if len(rows) < 2:
         return None
 
-    row = rows[1]
-
-    return {
-        "id": row[0],
-        "calculated_at": row[1],
-        "data_key": row[2],
-        "cpi_risk": row[3],
-        "gdp_risk": row[4],
-        "unemployment_risk": row[5],
-        "real_wage_risk": row[6],
-        "consumption_risk": row[7],
-        "total_risk": row[8],
-        "risk_status": row[9],
-        "economic_condition": row[10],
-        "anomaly_level": row[11],
-    }
+    return row_to_risk_dict(
+        rows[1]
+    )
 
 
 def main():
     print()
-    print("========================================")
-    print("      日本経済監視AI レポート生成")
-    print("========================================")
+
+    print(
+        "========================================"
+    )
+
+    print(
+        "      日本経済監視AI レポート生成"
+    )
+
+    print(
+        "========================================"
+    )
 
     print()
-    print("===== 経済データ読み込み =====")
+    print(
+        "===== 経済データ読み込み ====="
+    )
 
     facts = build_fact_texts()
 
@@ -554,23 +884,82 @@ def main():
     )
 
     print(
+        "日銀 基準割引率・基準貸付利率:",
+        facts["boj_rate_latest_date"],
+        facts["boj_rate_latest_value"],
+        "%"
+    )
+
+    print(
         "実質賃金連続低下:",
         facts["real_wage_decline_streak"],
         "か月"
     )
 
-    current_risk = get_current_risk()
-    previous_risk = get_previous_risk()
+    current_risk = (
+        get_current_risk()
+    )
+
+    previous_risk = (
+        get_previous_risk()
+    )
 
     print()
-    print("===== リスク情報 =====")
-    print("CPIリスク:", current_risk["cpi_risk"])
-    print("GDPリスク:", current_risk["gdp_risk"])
-    print("完全失業率リスク:", current_risk["unemployment_risk"])
-    print("実質賃金リスク:", current_risk["real_wage_risk"])
-    print("個人消費リスク:", current_risk["consumption_risk"])
-    print("総合リスク:", current_risk["total_risk"])
-    print("総合判定:", current_risk["risk_status"])
+    print(
+        "===== リスク情報 ====="
+    )
+
+    print(
+        "CPIリスク:",
+        current_risk["cpi_risk"]
+    )
+
+    print(
+        "GDPリスク:",
+        current_risk["gdp_risk"]
+    )
+
+    print(
+        "完全失業率リスク:",
+        current_risk[
+            "unemployment_risk"
+        ]
+    )
+
+    print(
+        "実質賃金リスク:",
+        current_risk[
+            "real_wage_risk"
+        ]
+    )
+
+    print(
+        "個人消費リスク:",
+        current_risk[
+            "consumption_risk"
+        ]
+    )
+
+    print(
+        "日銀金利リスク:",
+        current_risk[
+            "boj_rate_risk"
+        ]
+    )
+
+    print(
+        "総合リスク:",
+        current_risk[
+            "total_risk"
+        ]
+    )
+
+    print(
+        "総合判定:",
+        current_risk[
+            "risk_status"
+        ]
+    )
 
     reason_text = build_reason_text(
         facts,
@@ -585,35 +974,65 @@ def main():
     )
 
     print()
-    print("===== Ollamaによるレポート生成 =====")
+    print(
+        "===== Ollamaによるレポート生成 ====="
+    )
 
-    report = call_ollama(prompt)
+    report = call_ollama(
+        prompt
+    )
 
     if report is None:
-        print("AIレポート生成に失敗しました。")
-        return
-
-    file_path = save_report(report)
-
-    print()
-    print("===== レポート =====")
-    print(report)
-
-    print()
-    print("===== Discord通知判定 =====")
-
-    if current_risk["anomaly_level"] != "🟢 通常":
-        message = (
-            "🚨 日本経済監視AI 異常検知\n\n"
-            f"総合リスク: {current_risk['total_risk']} / 100\n"
-            f"総合判定: {current_risk['risk_status']}\n"
-            f"異常レベル: {current_risk['anomaly_level']}\n\n"
-            f"レポート: {os.path.basename(file_path)}"
+        print(
+            "AIレポート生成に"
+            "失敗しました。"
         )
 
-        send_discord(message)
+        return
+
+    file_path = save_report(
+        report
+    )
+
+    print()
+    print(
+        "===== レポート ====="
+    )
+
+    print(
+        report
+    )
+
+    print()
+    print(
+        "===== Discord通知判定 ====="
+    )
+
+    if (
+        current_risk["anomaly_level"]
+        != "🟢 通常"
+    ):
+        message = (
+            "🚨 日本経済監視AI 異常検知\n\n"
+            f"総合リスク: "
+            f"{current_risk['total_risk']} / 100\n"
+            f"総合判定: "
+            f"{current_risk['risk_status']}\n"
+            f"異常レベル: "
+            f"{current_risk['anomaly_level']}\n\n"
+            f"レポート: "
+            f"{os.path.basename(file_path)}"
+        )
+
+        send_discord(
+            message
+        )
+
     else:
-        print("通常状態のためDiscord通知はありません。")
+        print(
+            "通常状態のため"
+            "Discord通知はありません。"
+        )
 
 
 if __name__ == "__main__":

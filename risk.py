@@ -2,6 +2,7 @@ import sqlite3
 import statistics
 from datetime import datetime
 
+
 DB_PATH = "data/economy.db"
 
 CPI_INDICATOR = "CPI_総合_前年同月比"
@@ -9,6 +10,7 @@ GDP_INDICATOR = "GDP_実質_前年同期比"
 UNEMPLOYMENT_INDICATOR = "完全失業率"
 REAL_WAGE_INDICATOR = "実質賃金_前年比"
 CONSUMPTION_INDICATOR = "個人消費_前年同月比"
+BOJ_RATE_INDICATOR = "basic_loan_rate"
 
 
 def create_risk_history_table():
@@ -25,6 +27,7 @@ def create_risk_history_table():
             unemployment_risk REAL NOT NULL,
             real_wage_risk REAL NOT NULL,
             consumption_risk REAL NOT NULL DEFAULT 0,
+            boj_rate_risk REAL NOT NULL DEFAULT 0,
             total_risk REAL NOT NULL,
             risk_status TEXT NOT NULL,
             economic_condition TEXT NOT NULL,
@@ -34,7 +37,9 @@ def create_risk_history_table():
 
     columns = [
         row[1]
-        for row in cur.execute("PRAGMA table_info(risk_history)").fetchall()
+        for row in cur.execute(
+            "PRAGMA table_info(risk_history)"
+        ).fetchall()
     ]
 
     if "consumption_risk" not in columns:
@@ -43,7 +48,21 @@ def create_risk_history_table():
             ADD COLUMN consumption_risk REAL NOT NULL DEFAULT 0
         """)
 
-        print("risk_historyにconsumption_risk列を追加しました")
+        print(
+            "risk_historyに"
+            "consumption_risk列を追加しました"
+        )
+
+    if "boj_rate_risk" not in columns:
+        cur.execute("""
+            ALTER TABLE risk_history
+            ADD COLUMN boj_rate_risk REAL NOT NULL DEFAULT 0
+        """)
+
+        print(
+            "risk_historyに"
+            "boj_rate_risk列を追加しました"
+        )
 
     conn.commit()
     conn.close()
@@ -56,7 +75,7 @@ def get_previous_total_risk():
     cur.execute("""
         SELECT total_risk
         FROM risk_history
-        WHERE data_key LIKE '%CONSUMPTION=%'
+        WHERE data_key LIKE '%BOJ_RATE=%'
         ORDER BY id DESC
         LIMIT 1
     """)
@@ -112,18 +131,37 @@ def get_latest_data_date(indicator):
 
 
 def get_risk_data_key():
-    cpi_date = get_latest_data_date(CPI_INDICATOR)
-    gdp_date = get_latest_data_date(GDP_INDICATOR)
-    unemployment_date = get_latest_data_date(UNEMPLOYMENT_INDICATOR)
-    real_wage_date = get_latest_data_date(REAL_WAGE_INDICATOR)
-    consumption_date = get_latest_data_date(CONSUMPTION_INDICATOR)
+    cpi_date = get_latest_data_date(
+        CPI_INDICATOR
+    )
+
+    gdp_date = get_latest_data_date(
+        GDP_INDICATOR
+    )
+
+    unemployment_date = get_latest_data_date(
+        UNEMPLOYMENT_INDICATOR
+    )
+
+    real_wage_date = get_latest_data_date(
+        REAL_WAGE_INDICATOR
+    )
+
+    consumption_date = get_latest_data_date(
+        CONSUMPTION_INDICATOR
+    )
+
+    boj_rate_date = get_latest_data_date(
+        BOJ_RATE_INDICATOR
+    )
 
     return (
         f"CPI={cpi_date}|"
         f"GDP={gdp_date}|"
         f"UNEMPLOYMENT={unemployment_date}|"
         f"REAL_WAGE={real_wage_date}|"
-        f"CONSUMPTION={consumption_date}"
+        f"CONSUMPTION={consumption_date}|"
+        f"BOJ_RATE={boj_rate_date}"
     )
 
 
@@ -134,6 +172,7 @@ def save_risk_history(
     unemployment_risk,
     real_wage_risk,
     consumption_risk,
+    boj_rate_risk,
     total_risk,
     risk_status,
     condition,
@@ -151,7 +190,11 @@ def save_risk_history(
     existing = cur.fetchone()
 
     if existing:
-        print("同じ経済データのリスク履歴はすでに保存されています")
+        print(
+            "同じ経済データのリスク履歴は"
+            "すでに保存されています"
+        )
+
         conn.close()
         return False
 
@@ -164,20 +207,24 @@ def save_risk_history(
             unemployment_risk,
             real_wage_risk,
             consumption_risk,
+            boj_rate_risk,
             total_risk,
             risk_status,
             economic_condition,
             anomaly_level
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        ),
         data_key,
         cpi_risk,
         gdp_risk,
         unemployment_risk,
         real_wage_risk,
         consumption_risk,
+        boj_rate_risk,
         total_risk,
         risk_status,
         condition,
@@ -232,27 +279,41 @@ def calculate_change_z_score(values):
     changes = []
 
     for i in range(1, len(values)):
-        changes.append(values[i] - values[i - 1])
+        changes.append(
+            values[i] - values[i - 1]
+        )
 
     historical_changes = changes[:-1]
 
     if len(historical_changes) < 2:
         return 0
 
-    mean = statistics.mean(historical_changes)
-    std = statistics.stdev(historical_changes)
+    mean = statistics.mean(
+        historical_changes
+    )
+
+    std = statistics.stdev(
+        historical_changes
+    )
 
     if std == 0:
         return 0
 
     latest_change = changes[-1]
 
-    return (latest_change - mean) / std
+    return (
+        latest_change - mean
+    ) / std
 
 
 def z_to_risk(z_score):
     risk = z_score / 3 * 100
-    risk = max(0, min(risk, 100))
+
+    risk = max(
+        0,
+        min(risk, 100)
+    )
+
     return risk
 
 
@@ -262,14 +323,28 @@ def calculate_cpi_risk():
     if len(rows) < 12:
         return 0, 0, 0
 
-    values = [row[1] for row in rows]
+    values = [
+        row[1]
+        for row in rows
+    ]
+
     recent = values[-60:]
 
-    level_z = calculate_z_score(recent)
-    change_z = calculate_change_z_score(recent)
+    level_z = calculate_z_score(
+        recent
+    )
 
-    level_risk = z_to_risk(level_z)
-    change_risk = z_to_risk(change_z)
+    change_z = calculate_change_z_score(
+        recent
+    )
+
+    level_risk = z_to_risk(
+        level_z
+    )
+
+    change_risk = z_to_risk(
+        change_z
+    )
 
     risk = (
         level_risk * 0.50
@@ -289,14 +364,28 @@ def calculate_gdp_risk():
     if len(rows) < 12:
         return 0, 0, 0
 
-    values = [row[1] for row in rows]
+    values = [
+        row[1]
+        for row in rows
+    ]
+
     recent = values[-20:]
 
-    level_z = calculate_z_score(recent)
-    change_z = calculate_change_z_score(recent)
+    level_z = calculate_z_score(
+        recent
+    )
 
-    level_risk = z_to_risk(-level_z)
-    change_risk = z_to_risk(-change_z)
+    change_z = calculate_change_z_score(
+        recent
+    )
+
+    level_risk = z_to_risk(
+        -level_z
+    )
+
+    change_risk = z_to_risk(
+        -change_z
+    )
 
     risk = (
         level_risk * 0.50
@@ -311,19 +400,35 @@ def calculate_gdp_risk():
 
 
 def calculate_unemployment_risk():
-    rows = get_data(UNEMPLOYMENT_INDICATOR)
+    rows = get_data(
+        UNEMPLOYMENT_INDICATOR
+    )
 
     if len(rows) < 12:
         return 0, 0, 0
 
-    values = [row[1] for row in rows]
+    values = [
+        row[1]
+        for row in rows
+    ]
+
     recent = values[-60:]
 
-    level_z = calculate_z_score(recent)
-    change_z = calculate_change_z_score(recent)
+    level_z = calculate_z_score(
+        recent
+    )
 
-    level_risk = z_to_risk(level_z)
-    change_risk = z_to_risk(change_z)
+    change_z = calculate_change_z_score(
+        recent
+    )
+
+    level_risk = z_to_risk(
+        level_z
+    )
+
+    change_risk = z_to_risk(
+        change_z
+    )
 
     risk = (
         level_risk * 0.50
@@ -338,23 +443,43 @@ def calculate_unemployment_risk():
 
 
 def calculate_real_wage_risk():
-    rows = get_data(REAL_WAGE_INDICATOR)
+    rows = get_data(
+        REAL_WAGE_INDICATOR
+    )
 
     if len(rows) < 12:
         return 0, 0, 0, 0
 
-    values = [row[1] for row in rows]
+    values = [
+        row[1]
+        for row in rows
+    ]
+
     recent = values[-60:]
 
-    level_z = calculate_z_score(recent)
-    change_z = calculate_change_z_score(recent)
+    level_z = calculate_z_score(
+        recent
+    )
 
-    level_risk = z_to_risk(-level_z)
-    change_risk = z_to_risk(-change_z)
+    change_z = calculate_change_z_score(
+        recent
+    )
+
+    level_risk = z_to_risk(
+        -level_z
+    )
+
+    change_risk = z_to_risk(
+        -change_z
+    )
 
     decline_streak = 0
 
-    for i in range(len(values) - 1, 0, -1):
+    for i in range(
+        len(values) - 1,
+        0,
+        -1
+    ):
         if values[i] < values[i - 1]:
             decline_streak += 1
         else:
@@ -388,24 +513,87 @@ def calculate_real_wage_risk():
 
 
 def calculate_consumption_risk():
-    rows = get_data(CONSUMPTION_INDICATOR)
+    rows = get_data(
+        CONSUMPTION_INDICATOR
+    )
 
     if len(rows) < 12:
         return 0, 0, 0
 
-    values = [row[1] for row in rows]
+    values = [
+        row[1]
+        for row in rows
+    ]
+
     recent = values[-60:]
 
-    level_z = calculate_z_score(recent)
-    change_z = calculate_change_z_score(recent)
+    level_z = calculate_z_score(
+        recent
+    )
 
-    # 個人消費の前年同月比が低下するとリスク上昇
-    level_risk = z_to_risk(-level_z)
-    change_risk = z_to_risk(-change_z)
+    change_z = calculate_change_z_score(
+        recent
+    )
+
+    level_risk = z_to_risk(
+        -level_z
+    )
+
+    change_risk = z_to_risk(
+        -change_z
+    )
 
     risk = (
         level_risk * 0.50
         + change_risk * 0.50
+    )
+
+    return (
+        round(risk, 2),
+        round(level_z, 2),
+        round(change_z, 2)
+    )
+
+
+def calculate_boj_rate_risk():
+    rows = get_data(
+        BOJ_RATE_INDICATOR
+    )
+
+    if len(rows) < 12:
+        return 0, 0, 0
+
+    values = [
+        row[1]
+        for row in rows
+    ]
+
+    # 金利制度が大きく異なる古い時代を
+    # 直接比較しすぎないよう直近10年を使用
+    recent = values[-120:]
+
+    level_z = calculate_z_score(
+        recent
+    )
+
+    change_z = calculate_change_z_score(
+        recent
+    )
+
+    # 金利は「高いこと」だけで
+    # 景気悪化とは判断しない。
+    # 急上昇をより重視する。
+    level_risk = z_to_risk(
+        level_z
+    )
+
+    change_risk = z_to_risk(
+        change_z
+    )
+
+    risk = (
+        level_risk * 0.30
+        + change_risk * 0.70
     )
 
     return (
@@ -433,26 +621,27 @@ def detect_simultaneous_deterioration(
     gdp_risk,
     unemployment_risk,
     real_wage_risk,
-    consumption_risk
+    consumption_risk,
+    boj_rate_risk
 ):
-    deteriorated = 0
+    risks = [
+        cpi_risk,
+        gdp_risk,
+        unemployment_risk,
+        real_wage_risk,
+        consumption_risk,
+        boj_rate_risk
+    ]
 
-    if cpi_risk >= 40:
-        deteriorated += 1
+    deteriorated = sum(
+        risk >= 40
+        for risk in risks
+    )
 
-    if gdp_risk >= 40:
-        deteriorated += 1
+    if deteriorated >= 6:
+        return "🔴 6指標が同時に悪化"
 
-    if unemployment_risk >= 40:
-        deteriorated += 1
-
-    if real_wage_risk >= 40:
-        deteriorated += 1
-
-    if consumption_risk >= 40:
-        deteriorated += 1
-
-    if deteriorated >= 5:
+    if deteriorated == 5:
         return "🔴 5指標が同時に悪化"
 
     if deteriorated == 4:
@@ -476,14 +665,21 @@ def anomaly_level(
     gdp_risk,
     unemployment_risk,
     real_wage_risk,
-    consumption_risk
+    consumption_risk,
+    boj_rate_risk
 ):
-    simultaneous = detect_simultaneous_deterioration(
+    risks = [
         cpi_risk,
         gdp_risk,
         unemployment_risk,
         real_wage_risk,
-        consumption_risk
+        consumption_risk,
+        boj_rate_risk
+    ]
+
+    deteriorated = sum(
+        risk >= 40
+        for risk in risks
     )
 
     if total_risk >= 80:
@@ -495,33 +691,13 @@ def anomaly_level(
     if total_risk >= 40:
         return "🟡 注意"
 
-    if simultaneous in (
-        "🔴 5指標が同時に悪化",
-        "🔴 4指標が同時に悪化"
-    ):
+    if deteriorated >= 4:
         return "🔴 危険"
 
-    if (
-        (cpi_risk >= 40 and gdp_risk >= 40)
-        or (cpi_risk >= 40 and unemployment_risk >= 40)
-        or (cpi_risk >= 40 and real_wage_risk >= 40)
-        or (cpi_risk >= 40 and consumption_risk >= 40)
-        or (gdp_risk >= 40 and unemployment_risk >= 40)
-        or (gdp_risk >= 40 and real_wage_risk >= 40)
-        or (gdp_risk >= 40 and consumption_risk >= 40)
-        or (unemployment_risk >= 40 and real_wage_risk >= 40)
-        or (unemployment_risk >= 40 and consumption_risk >= 40)
-        or (real_wage_risk >= 40 and consumption_risk >= 40)
-    ):
+    if deteriorated >= 2:
         return "🟠 警戒"
 
-    if (
-        cpi_risk >= 40
-        or gdp_risk >= 40
-        or unemployment_risk >= 40
-        or real_wage_risk >= 40
-        or consumption_risk >= 40
-    ):
+    if deteriorated == 1:
         return "🟡 注意"
 
     return "🟢 通常"
@@ -532,48 +708,76 @@ def economic_condition(
     gdp_risk,
     unemployment_risk,
     real_wage_risk,
-    consumption_risk
+    consumption_risk,
+    boj_rate_risk
 ):
     if (
-        cpi_risk >= 40
-        and gdp_risk >= 40
-        and unemployment_risk >= 40
-        and real_wage_risk >= 40
-        and consumption_risk >= 40
-    ):
-        return "🔴 深刻な経済悪化"
-
-    if (
         gdp_risk >= 40
         and unemployment_risk >= 40
         and real_wage_risk >= 40
         and consumption_risk >= 40
     ):
-        return "🔴 景気後退・所得・消費悪化警戒"
+        return (
+            "🔴 景気後退・所得・"
+            "消費悪化警戒"
+        )
 
     if (
         cpi_risk >= 40
         and real_wage_risk >= 40
         and consumption_risk >= 40
     ):
-        return "🟠 インフレによる実質所得・消費悪化警戒"
+        return (
+            "🟠 インフレによる"
+            "実質所得・消費悪化警戒"
+        )
 
     if (
         cpi_risk >= 40
         and gdp_risk >= 40
         and consumption_risk >= 40
     ):
-        return "🟠 スタグフレーション・消費悪化警戒"
+        return (
+            "🟠 スタグフレーション・"
+            "消費悪化警戒"
+        )
 
     if (
         gdp_risk >= 40
         and unemployment_risk >= 40
         and consumption_risk >= 40
     ):
-        return "🟠 景気後退・消費悪化警戒"
+        return (
+            "🟠 景気後退・"
+            "消費悪化警戒"
+        )
 
-    if real_wage_risk >= 40 and consumption_risk >= 40:
-        return "🟠 実質所得・消費悪化警戒"
+    if (
+        boj_rate_risk >= 40
+        and gdp_risk >= 40
+    ):
+        return (
+            "🟠 金利上昇・"
+            "景気減速警戒"
+        )
+
+    if (
+        boj_rate_risk >= 40
+        and consumption_risk >= 40
+    ):
+        return (
+            "🟠 金利上昇・"
+            "個人消費悪化警戒"
+        )
+
+    if (
+        real_wage_risk >= 40
+        and consumption_risk >= 40
+    ):
+        return (
+            "🟠 実質所得・"
+            "消費悪化警戒"
+        )
 
     if consumption_risk >= 40:
         return "🟡 個人消費悪化警戒"
@@ -590,6 +794,9 @@ def economic_condition(
     if unemployment_risk >= 40:
         return "🟡 雇用悪化警戒"
 
+    if boj_rate_risk >= 40:
+        return "🟡 金利上昇警戒"
+
     return "🟢 大きな異常なし"
 
 
@@ -598,9 +805,17 @@ def main():
 
     previous_risk = get_previous_total_risk()
 
-    cpi_risk, cpi_level_z, cpi_change_z = calculate_cpi_risk()
+    (
+        cpi_risk,
+        cpi_level_z,
+        cpi_change_z
+    ) = calculate_cpi_risk()
 
-    gdp_risk, gdp_level_z, gdp_change_z = calculate_gdp_risk()
+    (
+        gdp_risk,
+        gdp_level_z,
+        gdp_change_z
+    ) = calculate_gdp_risk()
 
     (
         unemployment_risk,
@@ -621,37 +836,57 @@ def main():
         consumption_change_z
     ) = calculate_consumption_risk()
 
-    cpi_weight = 0.20
-    gdp_weight = 0.25
-    unemployment_weight = 0.20
-    real_wage_weight = 0.20
-    consumption_weight = 0.15
+    (
+        boj_rate_risk,
+        boj_rate_level_z,
+        boj_rate_change_z
+    ) = calculate_boj_rate_risk()
+
+    # 6指標のウェイト
+    # 合計100%
+    cpi_weight = 0.18
+    gdp_weight = 0.23
+    unemployment_weight = 0.18
+    real_wage_weight = 0.18
+    consumption_weight = 0.13
+    boj_rate_weight = 0.10
 
     total_risk = round(
         cpi_risk * cpi_weight
         + gdp_risk * gdp_weight
-        + unemployment_risk * unemployment_weight
-        + real_wage_risk * real_wage_weight
-        + consumption_risk * consumption_weight,
+        + unemployment_risk
+        * unemployment_weight
+        + real_wage_risk
+        * real_wage_weight
+        + consumption_risk
+        * consumption_weight
+        + boj_rate_risk
+        * boj_rate_weight,
         2
     )
 
-    status = risk_level(total_risk)
+    status = risk_level(
+        total_risk
+    )
 
     condition = economic_condition(
         cpi_risk,
         gdp_risk,
         unemployment_risk,
         real_wage_risk,
-        consumption_risk
+        consumption_risk,
+        boj_rate_risk
     )
 
-    simultaneous = detect_simultaneous_deterioration(
-        cpi_risk,
-        gdp_risk,
-        unemployment_risk,
-        real_wage_risk,
-        consumption_risk
+    simultaneous = (
+        detect_simultaneous_deterioration(
+            cpi_risk,
+            gdp_risk,
+            unemployment_risk,
+            real_wage_risk,
+            consumption_risk,
+            boj_rate_risk
+        )
     )
 
     anomaly = anomaly_level(
@@ -660,12 +895,15 @@ def main():
         gdp_risk,
         unemployment_risk,
         real_wage_risk,
-        consumption_risk
+        consumption_risk,
+        boj_rate_risk
     )
 
-    risk_change, risk_change_status = calculate_risk_change(
-        previous_risk,
-        total_risk
+    risk_change, risk_change_status = (
+        calculate_risk_change(
+            previous_risk,
+            total_risk
+        )
     )
 
     data_key = get_risk_data_key()
@@ -677,6 +915,7 @@ def main():
         unemployment_risk,
         real_wage_risk,
         consumption_risk,
+        boj_rate_risk,
         total_risk,
         status,
         condition,
@@ -684,79 +923,217 @@ def main():
     )
 
     print()
-    print("===== 日本経済リスクスコア =====")
+    print(
+        "===== 日本経済リスクスコア ====="
+    )
     print()
 
     print("【CPI】")
-    print("水準Zスコア:", cpi_level_z)
-    print("変化Zスコア:", cpi_change_z)
-    print("リスク:", cpi_risk, "/ 100")
+    print(
+        "水準Zスコア:",
+        cpi_level_z
+    )
+    print(
+        "変化Zスコア:",
+        cpi_change_z
+    )
+    print(
+        "リスク:",
+        cpi_risk,
+        "/ 100"
+    )
     print()
 
     print("【GDP】")
-    print("水準Zスコア:", gdp_level_z)
-    print("変化Zスコア:", gdp_change_z)
-    print("リスク:", gdp_risk, "/ 100")
+    print(
+        "水準Zスコア:",
+        gdp_level_z
+    )
+    print(
+        "変化Zスコア:",
+        gdp_change_z
+    )
+    print(
+        "リスク:",
+        gdp_risk,
+        "/ 100"
+    )
     print()
 
     print("【完全失業率】")
-    print("水準Zスコア:", unemployment_level_z)
-    print("変化Zスコア:", unemployment_change_z)
-    print("リスク:", unemployment_risk, "/ 100")
+    print(
+        "水準Zスコア:",
+        unemployment_level_z
+    )
+    print(
+        "変化Zスコア:",
+        unemployment_change_z
+    )
+    print(
+        "リスク:",
+        unemployment_risk,
+        "/ 100"
+    )
     print()
 
     print("【実質賃金】")
-    print("水準Zスコア:", real_wage_level_z)
-    print("変化Zスコア:", real_wage_change_z)
-    print("連続低下:", real_wage_decline_streak, "か月")
-    print("リスク:", real_wage_risk, "/ 100")
+    print(
+        "水準Zスコア:",
+        real_wage_level_z
+    )
+    print(
+        "変化Zスコア:",
+        real_wage_change_z
+    )
+    print(
+        "連続低下:",
+        real_wage_decline_streak,
+        "か月"
+    )
+    print(
+        "リスク:",
+        real_wage_risk,
+        "/ 100"
+    )
     print()
 
     print("【個人消費】")
-    print("水準Zスコア:", consumption_level_z)
-    print("変化Zスコア:", consumption_change_z)
-    print("リスク:", consumption_risk, "/ 100")
+    print(
+        "水準Zスコア:",
+        consumption_level_z
+    )
+    print(
+        "変化Zスコア:",
+        consumption_change_z
+    )
+    print(
+        "リスク:",
+        consumption_risk,
+        "/ 100"
+    )
+    print()
+
+    print("【日銀金利】")
+    print(
+        "水準Zスコア:",
+        boj_rate_level_z
+    )
+    print(
+        "変化Zスコア:",
+        boj_rate_change_z
+    )
+    print(
+        "リスク:",
+        boj_rate_risk,
+        "/ 100"
+    )
     print()
 
     print("【総合】")
-    print("CPIウェイト:", cpi_weight * 100, "%")
-    print("GDPウェイト:", gdp_weight * 100, "%")
-    print("失業率ウェイト:", unemployment_weight * 100, "%")
-    print("実質賃金ウェイト:", real_wage_weight * 100, "%")
-    print("個人消費ウェイト:", consumption_weight * 100, "%")
+    print(
+        "CPIウェイト:",
+        cpi_weight * 100,
+        "%"
+    )
+    print(
+        "GDPウェイト:",
+        gdp_weight * 100,
+        "%"
+    )
+    print(
+        "失業率ウェイト:",
+        unemployment_weight * 100,
+        "%"
+    )
+    print(
+        "実質賃金ウェイト:",
+        real_wage_weight * 100,
+        "%"
+    )
+    print(
+        "個人消費ウェイト:",
+        consumption_weight * 100,
+        "%"
+    )
+    print(
+        "日銀金利ウェイト:",
+        boj_rate_weight * 100,
+        "%"
+    )
     print()
 
-    print("総合リスク:", total_risk, "/ 100")
-    print("総合判定:", status)
+    print(
+        "総合リスク:",
+        total_risk,
+        "/ 100"
+    )
+
+    print(
+        "総合判定:",
+        status
+    )
     print()
 
     print("【前回との比較】")
 
     if previous_risk is None:
-        print("前回リスク: データなし")
+        print(
+            "前回リスク: "
+            "6指標版データなし"
+        )
     else:
-        print("前回総合リスク:", previous_risk, "/ 100")
+        print(
+            "前回総合リスク:",
+            previous_risk,
+            "/ 100"
+        )
 
-    print("今回総合リスク:", total_risk, "/ 100")
+    print(
+        "今回総合リスク:",
+        total_risk,
+        "/ 100"
+    )
 
     if risk_change is None:
-        print("リスク変化: 初回計算のため比較なし")
+        print(
+            "リスク変化: "
+            "6指標版の初回計算のため比較なし"
+        )
     else:
-        print("リスク変化:", risk_change, "ポイント")
+        print(
+            "リスク変化:",
+            risk_change,
+            "ポイント"
+        )
 
-    print("変化判定:", risk_change_status)
+    print(
+        "変化判定:",
+        risk_change_status
+    )
     print()
 
-    print("経済状態:", condition)
+    print(
+        "経済状態:",
+        condition
+    )
     print()
 
     print("【異常検知】")
-    print("同時悪化:", simultaneous)
-    print("異常レベル:", anomaly)
+    print(
+        "同時悪化:",
+        simultaneous
+    )
+    print(
+        "異常レベル:",
+        anomaly
+    )
 
     if not saved:
         print()
-        print("今回の経済データは前回と同じため、履歴は追加保存していません")
+        print(
+            "今回の経済データは前回と同じため、"
+            "履歴は追加保存していません"
+        )
 
 
 if __name__ == "__main__":
