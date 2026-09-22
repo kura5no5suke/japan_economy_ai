@@ -14,6 +14,7 @@ UNEMPLOYMENT_INDICATOR = "完全失業率"
 REAL_WAGE_INDICATOR = "実質賃金_前年比"
 CONSUMPTION_INDICATOR = "個人消費_前年同月比"
 BOJ_RATE_INDICATOR = "basic_loan_rate"
+USD_JPY_INDICATOR = "usd_jpy"
 
 load_dotenv()
 
@@ -57,12 +58,13 @@ def get_latest_risk_history(limit=2):
             real_wage_risk,
             consumption_risk,
             boj_rate_risk,
+            usd_jpy_risk,
             total_risk,
             risk_status,
             economic_condition,
             anomaly_level
         FROM risk_history
-        WHERE data_key LIKE '%BOJ_RATE=%'
+        WHERE data_key LIKE '%USD_JPY=%'
         ORDER BY id DESC
         LIMIT ?
     """, (limit,))
@@ -150,6 +152,11 @@ def build_fact_texts():
         2
     )
 
+    usd_jpy_rows = get_latest_values(
+        USD_JPY_INDICATOR,
+        2
+    )
+
     if len(cpi_rows) < 2:
         raise RuntimeError(
             "CPIの比較データが不足しています。"
@@ -178,6 +185,11 @@ def build_fact_texts():
     if len(boj_rate_rows) < 2:
         raise RuntimeError(
             "日銀金利の比較データが不足しています。"
+        )
+
+    if len(usd_jpy_rows) < 2:
+        raise RuntimeError(
+            "ドル円の比較データが不足しています。"
         )
 
     (
@@ -252,6 +264,18 @@ def build_fact_texts():
         _
     ) = boj_rate_rows[1]
 
+    (
+        usd_jpy_latest_date,
+        usd_jpy_latest_value,
+        _
+    ) = usd_jpy_rows[0]
+
+    (
+        usd_jpy_previous_date,
+        usd_jpy_previous_value,
+        _
+    ) = usd_jpy_rows[1]
+
     cpi_direction = get_direction(
         cpi_latest_value,
         cpi_previous_value
@@ -280,6 +304,11 @@ def build_fact_texts():
     boj_rate_direction = get_direction(
         boj_rate_latest_value,
         boj_rate_previous_value
+    )
+
+    usd_jpy_direction = get_direction(
+        usd_jpy_latest_value,
+        usd_jpy_previous_value
     )
 
     cpi_fact = (
@@ -322,6 +351,13 @@ def build_fact_texts():
         f"前回の{boj_rate_previous_value}%から"
         f"最新の{boj_rate_latest_value}%へ"
         f"{boj_rate_direction}。"
+    )
+
+    usd_jpy_fact = (
+        f"ドル円の月中平均は、"
+        f"前回の{usd_jpy_previous_value}円/ドルから"
+        f"最新の{usd_jpy_latest_value}円/ドルへ"
+        f"{usd_jpy_direction}。"
     )
 
     decline_streak = (
@@ -401,6 +437,18 @@ def build_fact_texts():
         "boj_rate_previous_value":
             boj_rate_previous_value,
 
+        "usd_jpy_latest_date":
+            usd_jpy_latest_date,
+
+        "usd_jpy_previous_date":
+            usd_jpy_previous_date,
+
+        "usd_jpy_latest_value":
+            usd_jpy_latest_value,
+
+        "usd_jpy_previous_value":
+            usd_jpy_previous_value,
+
         "cpi_fact":
             cpi_fact,
 
@@ -418,6 +466,9 @@ def build_fact_texts():
 
         "boj_rate_fact":
             boj_rate_fact,
+
+        "usd_jpy_fact":
+            usd_jpy_fact,
 
         "real_wage_decline_streak":
             decline_streak,
@@ -438,6 +489,7 @@ def build_reason_text(
         f"か月である。\n"
         f"{facts['consumption_fact']}\n"
         f"{facts['boj_rate_fact']}\n"
+        f"{facts['usd_jpy_fact']}\n"
         f"総合リスクは"
         f"{current_risk['total_risk']} / 100で、"
         f"総合判定は"
@@ -496,6 +548,11 @@ def build_prompt(
         previous_risk
     )
 
+    if previous_risk is None:
+        risk_change_display = "比較なし"
+    else:
+        risk_change_display = f"{risk_change_text}ポイント"
+
     prompt = f"""
 あなたは日本経済監視AIです。
 
@@ -517,6 +574,8 @@ def build_prompt(
 - 個人消費は必ず「前年同月比」と表現する。
 - 日銀金利は「基準割引率および基準貸付利率」と表現する。
 - 日銀金利を「政策金利」と言い換えない。
+- ドル円は「月中平均」と表現する。
+- ドル円の上昇・低下だけから「円安」「円高」「改善」「悪化」と断定しない。
 - 判断理由はPython生成済みの文章をそのまま使用する。
 - 判断理由の文章を書き換えない。
 - 思考過程を出力しない。
@@ -543,6 +602,9 @@ def build_prompt(
 ■ 日銀金利
 {facts['boj_rate_fact']}
 
+■ ドル円
+{facts['usd_jpy_fact']}
+
 【判断理由】
 {reason_text}
 
@@ -553,13 +615,14 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 実質賃金リスク: {current_risk['real_wage_risk']} / 100
 個人消費リスク: {current_risk['consumption_risk']} / 100
 日銀金利リスク: {current_risk['boj_rate_risk']} / 100
+ドル円リスク: {current_risk['usd_jpy_risk']} / 100
 総合リスク: {current_risk['total_risk']} / 100
 総合判定: {current_risk['risk_status']}
 
 【リスク変化】
 前回総合リスク: {previous_risk_text}
 今回総合リスク: {current_risk['total_risk']}
-変化量: {risk_change_text}ポイント
+変化量: {risk_change_display}
 変化判定: {risk_change_status}
 
 【異常検知】
@@ -589,6 +652,9 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 ■ 日銀金利
 {facts['boj_rate_fact']}
 
+■ ドル円
+{facts['usd_jpy_fact']}
+
 ■ リスク
 CPIリスク: {current_risk['cpi_risk']} / 100
 GDPリスク: {current_risk['gdp_risk']} / 100
@@ -596,13 +662,14 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 実質賃金リスク: {current_risk['real_wage_risk']} / 100
 個人消費リスク: {current_risk['consumption_risk']} / 100
 日銀金利リスク: {current_risk['boj_rate_risk']} / 100
+ドル円リスク: {current_risk['usd_jpy_risk']} / 100
 総合リスク: {current_risk['total_risk']} / 100
 総合判定: {current_risk['risk_status']}
 
 ■ リスク変化
 前回総合リスク: {previous_risk_text}
 今回総合リスク: {current_risk['total_risk']}
-変化量: {risk_change_text}ポイント
+変化量: {risk_change_display}
 変化判定: {risk_change_status}
 
 ■ 異常検知
@@ -616,7 +683,7 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 {reason_text}
 
 ■ 注意事項
-この6指標だけでは日本経済全体を完全には判断できない。
+この7指標だけでは日本経済全体を完全には判断できない。
 """
 
     return prompt
@@ -787,17 +854,20 @@ def row_to_risk_dict(row):
         "boj_rate_risk":
             row[8],
 
-        "total_risk":
+        "usd_jpy_risk":
             row[9],
 
-        "risk_status":
+        "total_risk":
             row[10],
 
-        "economic_condition":
+        "risk_status":
             row[11],
 
-        "anomaly_level":
+        "economic_condition":
             row[12],
+
+        "anomaly_level":
+            row[13],
     }
 
 
@@ -806,7 +876,7 @@ def get_current_risk():
 
     if not rows:
         raise RuntimeError(
-            "6指標版のrisk_historyに"
+            "7指標版のrisk_historyに"
             "データがありません。"
         )
 
@@ -891,6 +961,13 @@ def main():
     )
 
     print(
+        "ドル円 月中平均:",
+        facts["usd_jpy_latest_date"],
+        facts["usd_jpy_latest_value"],
+        "円/ドル"
+    )
+
+    print(
         "実質賃金連続低下:",
         facts["real_wage_decline_streak"],
         "か月"
@@ -944,6 +1021,13 @@ def main():
         "日銀金利リスク:",
         current_risk[
             "boj_rate_risk"
+        ]
+    )
+
+    print(
+        "ドル円リスク:",
+        current_risk[
+            "usd_jpy_risk"
         ]
     )
 
