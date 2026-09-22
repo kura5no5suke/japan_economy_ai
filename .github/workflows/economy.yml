@@ -1,0 +1,80 @@
+name: Japan Economy Monitor
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 22 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Create database
+        run: python -c "from database import create_database; create_database()"
+
+      - name: Run CPI
+        env:
+          ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}
+        run: python estat.py
+
+      - name: Run GDP
+        env:
+          ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}
+        run: python gdp.py
+
+      - name: Run unemployment
+        env:
+          ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}
+        run: python unemployment.py
+
+      - name: Run real wage
+        run: python real_wage.py
+
+      - name: Run consumption
+        env:
+          ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}
+        run: python consumption.py
+
+      - name: Run BOJ rate
+        run: python boj.py
+
+      - name: Run USD JPY
+        run: python forex.py
+
+      - name: Run risk calculation
+        run: python risk.py
+
+      - name: Run risk spike alert
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python risk_spike_alert.py
+
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python cloud_notify.py
+
+      - name: Save updated database
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/economy.db
+          git diff --cached --quiet || git commit -m "Update economy database"
+          git push

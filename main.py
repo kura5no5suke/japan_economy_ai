@@ -28,6 +28,7 @@ def main():
         ["py", "real_wage.py"],
         ["py", "consumption.py"],
         ["py", "boj.py"],
+        ["py", "forex.py"],
         ["py", "risk.py"],
         ["py", "ai_report.py"],
         ["py", "risk_spike_alert.py"],

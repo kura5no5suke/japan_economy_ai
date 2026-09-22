@@ -11,6 +11,7 @@ UNEMPLOYMENT_INDICATOR = "完全失業率"
 REAL_WAGE_INDICATOR = "実質賃金_前年比"
 CONSUMPTION_INDICATOR = "個人消費_前年同月比"
 BOJ_RATE_INDICATOR = "basic_loan_rate"
+USD_JPY_INDICATOR = "usd_jpy"
 
 
 def create_risk_history_table():
@@ -28,6 +29,7 @@ def create_risk_history_table():
             real_wage_risk REAL NOT NULL,
             consumption_risk REAL NOT NULL DEFAULT 0,
             boj_rate_risk REAL NOT NULL DEFAULT 0,
+            usd_jpy_risk REAL NOT NULL DEFAULT 0,
             total_risk REAL NOT NULL,
             risk_status TEXT NOT NULL,
             economic_condition TEXT NOT NULL,
@@ -64,6 +66,17 @@ def create_risk_history_table():
             "boj_rate_risk列を追加しました"
         )
 
+    if "usd_jpy_risk" not in columns:
+        cur.execute("""
+            ALTER TABLE risk_history
+            ADD COLUMN usd_jpy_risk REAL NOT NULL DEFAULT 0
+        """)
+
+        print(
+            "risk_historyに"
+            "usd_jpy_risk列を追加しました"
+        )
+
     conn.commit()
     conn.close()
 
@@ -75,7 +88,7 @@ def get_previous_total_risk():
     cur.execute("""
         SELECT total_risk
         FROM risk_history
-        WHERE data_key LIKE '%BOJ_RATE=%'
+        WHERE data_key LIKE '%USD_JPY=%'
         ORDER BY id DESC
         LIMIT 1
     """)
@@ -155,13 +168,18 @@ def get_risk_data_key():
         BOJ_RATE_INDICATOR
     )
 
+    usd_jpy_date = get_latest_data_date(
+        USD_JPY_INDICATOR
+    )
+
     return (
         f"CPI={cpi_date}|"
         f"GDP={gdp_date}|"
         f"UNEMPLOYMENT={unemployment_date}|"
         f"REAL_WAGE={real_wage_date}|"
         f"CONSUMPTION={consumption_date}|"
-        f"BOJ_RATE={boj_rate_date}"
+        f"BOJ_RATE={boj_rate_date}|"
+        f"USD_JPY={usd_jpy_date}"
     )
 
 
@@ -173,6 +191,7 @@ def save_risk_history(
     real_wage_risk,
     consumption_risk,
     boj_rate_risk,
+    usd_jpy_risk,
     total_risk,
     risk_status,
     condition,
@@ -208,12 +227,13 @@ def save_risk_history(
             real_wage_risk,
             consumption_risk,
             boj_rate_risk,
+            usd_jpy_risk,
             total_risk,
             risk_status,
             economic_condition,
             anomaly_level
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -225,6 +245,7 @@ def save_risk_history(
         real_wage_risk,
         consumption_risk,
         boj_rate_risk,
+        usd_jpy_risk,
         total_risk,
         risk_status,
         condition,
@@ -603,6 +624,53 @@ def calculate_boj_rate_risk():
     )
 
 
+
+def calculate_usd_jpy_risk():
+    rows = get_data(
+        USD_JPY_INDICATOR
+    )
+
+    if len(rows) < 12:
+        return 0, 0, 0
+
+    values = [
+        row[1]
+        for row in rows
+    ]
+
+    # 為替制度や長期構造の違いを直接比較しすぎないよう
+    # 直近10年（120か月）を基準にする。
+    recent = values[-120:]
+
+    level_z = calculate_z_score(
+        recent
+    )
+
+    change_z = calculate_change_z_score(
+        recent
+    )
+
+    # 円安・円高の方向そのものを「悪い」と決めつけず、
+    # 平常レンジからの乖離と急変の大きさをリスク化する。
+    level_risk = z_to_risk(
+        abs(level_z)
+    )
+
+    change_risk = z_to_risk(
+        abs(change_z)
+    )
+
+    risk = (
+        level_risk * 0.30
+        + change_risk * 0.70
+    )
+
+    return (
+        round(risk, 2),
+        round(level_z, 2),
+        round(change_z, 2)
+    )
+
 def risk_level(score):
     if score < 20:
         return "🟢 安全"
@@ -622,7 +690,8 @@ def detect_simultaneous_deterioration(
     unemployment_risk,
     real_wage_risk,
     consumption_risk,
-    boj_rate_risk
+    boj_rate_risk,
+    usd_jpy_risk
 ):
     risks = [
         cpi_risk,
@@ -630,7 +699,8 @@ def detect_simultaneous_deterioration(
         unemployment_risk,
         real_wage_risk,
         consumption_risk,
-        boj_rate_risk
+        boj_rate_risk,
+        usd_jpy_risk
     ]
 
     deteriorated = sum(
@@ -638,7 +708,10 @@ def detect_simultaneous_deterioration(
         for risk in risks
     )
 
-    if deteriorated >= 6:
+    if deteriorated >= 7:
+        return "🔴 7指標が同時に悪化"
+
+    if deteriorated == 6:
         return "🔴 6指標が同時に悪化"
 
     if deteriorated == 5:
@@ -666,7 +739,8 @@ def anomaly_level(
     unemployment_risk,
     real_wage_risk,
     consumption_risk,
-    boj_rate_risk
+    boj_rate_risk,
+    usd_jpy_risk
 ):
     risks = [
         cpi_risk,
@@ -674,7 +748,8 @@ def anomaly_level(
         unemployment_risk,
         real_wage_risk,
         consumption_risk,
-        boj_rate_risk
+        boj_rate_risk,
+        usd_jpy_risk
     ]
 
     deteriorated = sum(
@@ -709,7 +784,8 @@ def economic_condition(
     unemployment_risk,
     real_wage_risk,
     consumption_risk,
-    boj_rate_risk
+    boj_rate_risk,
+    usd_jpy_risk
 ):
     if (
         gdp_risk >= 40
@@ -779,6 +855,21 @@ def economic_condition(
             "消費悪化警戒"
         )
 
+    if (
+        usd_jpy_risk >= 40
+        and cpi_risk >= 40
+    ):
+        return "🟠 為替急変・物価警戒"
+
+    if (
+        usd_jpy_risk >= 40
+        and boj_rate_risk >= 40
+    ):
+        return "🟠 為替・金利変動警戒"
+
+    if usd_jpy_risk >= 40:
+        return "🟡 為替変動警戒"
+
     if consumption_risk >= 40:
         return "🟡 個人消費悪化警戒"
 
@@ -842,14 +933,21 @@ def main():
         boj_rate_change_z
     ) = calculate_boj_rate_risk()
 
-    # 6指標のウェイト
+    (
+        usd_jpy_risk,
+        usd_jpy_level_z,
+        usd_jpy_change_z
+    ) = calculate_usd_jpy_risk()
+
+    # 7指標のウェイト
     # 合計100%
-    cpi_weight = 0.18
-    gdp_weight = 0.23
-    unemployment_weight = 0.18
-    real_wage_weight = 0.18
-    consumption_weight = 0.13
-    boj_rate_weight = 0.10
+    cpi_weight = 0.16
+    gdp_weight = 0.21
+    unemployment_weight = 0.16
+    real_wage_weight = 0.16
+    consumption_weight = 0.12
+    boj_rate_weight = 0.09
+    usd_jpy_weight = 0.10
 
     total_risk = round(
         cpi_risk * cpi_weight
@@ -861,7 +959,9 @@ def main():
         + consumption_risk
         * consumption_weight
         + boj_rate_risk
-        * boj_rate_weight,
+        * boj_rate_weight
+        + usd_jpy_risk
+        * usd_jpy_weight,
         2
     )
 
@@ -875,7 +975,8 @@ def main():
         unemployment_risk,
         real_wage_risk,
         consumption_risk,
-        boj_rate_risk
+        boj_rate_risk,
+        usd_jpy_risk
     )
 
     simultaneous = (
@@ -885,7 +986,8 @@ def main():
             unemployment_risk,
             real_wage_risk,
             consumption_risk,
-            boj_rate_risk
+            boj_rate_risk,
+            usd_jpy_risk
         )
     )
 
@@ -896,7 +998,8 @@ def main():
         unemployment_risk,
         real_wage_risk,
         consumption_risk,
-        boj_rate_risk
+        boj_rate_risk,
+        usd_jpy_risk
     )
 
     risk_change, risk_change_status = (
@@ -916,6 +1019,7 @@ def main():
         real_wage_risk,
         consumption_risk,
         boj_rate_risk,
+        usd_jpy_risk,
         total_risk,
         status,
         condition,
@@ -1029,6 +1133,22 @@ def main():
     )
     print()
 
+    print("【ドル円】")
+    print(
+        "水準Zスコア:",
+        usd_jpy_level_z
+    )
+    print(
+        "変化Zスコア:",
+        usd_jpy_change_z
+    )
+    print(
+        "リスク:",
+        usd_jpy_risk,
+        "/ 100"
+    )
+    print()
+
     print("【総合】")
     print(
         "CPIウェイト:",
@@ -1060,6 +1180,11 @@ def main():
         boj_rate_weight * 100,
         "%"
     )
+    print(
+        "ドル円ウェイト:",
+        usd_jpy_weight * 100,
+        "%"
+    )
     print()
 
     print(
@@ -1079,7 +1204,7 @@ def main():
     if previous_risk is None:
         print(
             "前回リスク: "
-            "6指標版データなし"
+            "7指標版データなし"
         )
     else:
         print(
@@ -1097,7 +1222,7 @@ def main():
     if risk_change is None:
         print(
             "リスク変化: "
-            "6指標版の初回計算のため比較なし"
+            "7指標版の初回計算のため比較なし"
         )
     else:
         print(
