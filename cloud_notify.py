@@ -24,12 +24,13 @@ def get_latest_risk():
             consumption_risk,
             boj_rate_risk,
             usd_jpy_risk,
+            industrial_production_risk,
             total_risk,
             risk_status,
             economic_condition,
             anomaly_level
         FROM risk_history
-        WHERE data_key LIKE '%USD_JPY=%'
+        WHERE data_key LIKE '%INDUSTRIAL_PRODUCTION=%'
         ORDER BY id DESC
         LIMIT 1
     """)
@@ -96,7 +97,7 @@ def main():
 
     if row is None:
         print(
-            "7指標版のリスクデータが"
+            "8指標版のリスクデータが"
             "ありません。"
         )
         return
@@ -109,6 +110,7 @@ def main():
         consumption_risk,
         boj_rate_risk,
         usd_jpy_risk,
+        industrial_production_risk,
         total_risk,
         risk_status,
         economic_condition,
@@ -128,7 +130,9 @@ def main():
         f"日銀金利リスク: "
         f"{boj_rate_risk} / 100\n"
         f"ドル円リスク: "
-        f"{usd_jpy_risk} / 100\n\n"
+        f"{usd_jpy_risk} / 100\n"
+        f"鉱工業生産リスク: "
+        f"{industrial_production_risk} / 100\n\n"
         f"総合リスク: {total_risk} / 100\n"
         f"総合判定: {risk_status}\n"
         f"経済状態: {economic_condition}\n"

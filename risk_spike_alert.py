@@ -20,12 +20,12 @@ def get_latest_two_risks():
     cursor.execute("PRAGMA table_info(risk_history)")
     columns = [row[1] for row in cursor.fetchall()]
 
-    # 7指標版では data_key に USD_JPY= が入っている
+    # 8指標版では data_key に INDUSTRIAL_PRODUCTION= が入っている
     if "data_key" in columns:
         cursor.execute("""
             SELECT total_risk
             FROM risk_history
-            WHERE data_key LIKE '%USD_JPY=%'
+            WHERE data_key LIKE '%INDUSTRIAL_PRODUCTION=%'
             ORDER BY id DESC
             LIMIT 2
         """)
@@ -103,7 +103,7 @@ def main():
 
     if result is None:
         print(
-            "比較できる7指標版の"
+            "比較できる8指標版の"
             "リスク履歴が2件ありません。"
         )
 
@@ -140,7 +140,7 @@ def main():
 
         message = (
             "🚨 日本経済監視AI 緊急警告\n\n"
-            "7指標版の総合リスクが"
+            "8指標版の総合リスクが"
             "急上昇しました。\n\n"
             f"前回: "
             f"{previous_risk:.2f} / 100\n"
