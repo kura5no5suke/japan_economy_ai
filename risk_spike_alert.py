@@ -9,7 +9,9 @@ SPIKE_THRESHOLD = 10.0
 
 load_dotenv()
 
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
+DISCORD_WEBHOOK_URL = os.getenv(
+    "DISCORD_WEBHOOK_URL"
+)
 
 
 def get_latest_two_risks():
@@ -17,15 +19,23 @@ def get_latest_two_risks():
     cursor = conn.cursor()
 
     # risk_history の列を確認
-    cursor.execute("PRAGMA table_info(risk_history)")
-    columns = [row[1] for row in cursor.fetchall()]
+    cursor.execute(
+        "PRAGMA table_info(risk_history)"
+    )
 
-    # 8指標版では data_key に INDUSTRIAL_PRODUCTION= が入っている
+    columns = [
+        row[1]
+        for row in cursor.fetchall()
+    ]
+
+    # 9指標版では data_key に
+    # MACHINERY_ORDERS= が入っている
     if "data_key" in columns:
         cursor.execute("""
             SELECT total_risk
             FROM risk_history
-            WHERE data_key LIKE '%INDUSTRIAL_PRODUCTION=%'
+            WHERE data_key
+                LIKE '%MACHINERY_ORDERS=%'
             ORDER BY id DESC
             LIMIT 2
         """)
@@ -45,10 +55,18 @@ def get_latest_two_risks():
     if len(rows) < 2:
         return None
 
-    current_risk = float(rows[0][0])
-    previous_risk = float(rows[1][0])
+    current_risk = float(
+        rows[0][0]
+    )
 
-    return previous_risk, current_risk
+    previous_risk = float(
+        rows[1][0]
+    )
+
+    return (
+        previous_risk,
+        current_risk,
+    )
 
 
 def send_discord(message):
@@ -57,6 +75,7 @@ def send_discord(message):
             "DISCORD_WEBHOOK_URLが"
             "設定されていません。"
         )
+
         return False
 
     try:
@@ -65,18 +84,22 @@ def send_discord(message):
             json={
                 "content": message
             },
-            timeout=30
+            timeout=30,
         )
 
-        if response.status_code in (200, 204):
+        if response.status_code in (
+            200,
+            204,
+        ):
             print(
                 "Discord警告を送信しました。"
             )
+
             return True
 
         print(
             "Discord送信失敗:",
-            response.status_code
+            response.status_code,
         )
 
         print(
@@ -88,7 +111,7 @@ def send_discord(message):
     except requests.RequestException as e:
         print(
             "Discord通信エラー:",
-            e
+            e,
         )
 
         return False
@@ -103,7 +126,7 @@ def main():
 
     if result is None:
         print(
-            "比較できる8指標版の"
+            "比較できる9指標版の"
             "リスク履歴が2件ありません。"
         )
 
@@ -114,33 +137,41 @@ def main():
 
         return
 
-    previous_risk, current_risk = result
+    (
+        previous_risk,
+        current_risk,
+    ) = result
 
     change = round(
-        current_risk - previous_risk,
-        2
+        current_risk
+        - previous_risk,
+        2,
     )
 
     print(
-        f"前回: {previous_risk:.2f} / 100"
+        f"前回: "
+        f"{previous_risk:.2f} / 100"
     )
 
     print(
-        f"今回: {current_risk:.2f} / 100"
+        f"今回: "
+        f"{current_risk:.2f} / 100"
     )
 
     print(
-        f"変化: {change:.2f} ポイント"
+        f"変化: "
+        f"{change:.2f} ポイント"
     )
 
     if change >= SPIKE_THRESHOLD:
         print(
-            "🔴 総合リスクが急上昇しています"
+            "🔴 総合リスクが"
+            "急上昇しています"
         )
 
         message = (
             "🚨 日本経済監視AI 緊急警告\n\n"
-            "8指標版の総合リスクが"
+            "9指標版の総合リスクが"
             "急上昇しました。\n\n"
             f"前回: "
             f"{previous_risk:.2f} / 100\n"
@@ -153,7 +184,9 @@ def main():
             "ポイント以上"
         )
 
-        send_discord(message)
+        send_discord(
+            message
+        )
 
     else:
         print(

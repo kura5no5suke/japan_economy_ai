@@ -63,6 +63,9 @@ jobs:
           ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}
         run: python industrial_production.py
 
+      - name: Run machinery orders
+        run: python machinery_orders.py
+
       - name: Run risk calculation
         run: python risk.py
 

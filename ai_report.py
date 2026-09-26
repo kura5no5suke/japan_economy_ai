@@ -16,6 +16,7 @@ CONSUMPTION_INDICATOR = "個人消費_前年同月比"
 BOJ_RATE_INDICATOR = "basic_loan_rate"
 USD_JPY_INDICATOR = "usd_jpy"
 INDUSTRIAL_PRODUCTION_INDICATOR = "鉱工業生産指数"
+MACHINERY_ORDERS_INDICATOR = "機械受注（船舶・電力を除く民需）"
 
 load_dotenv()
 
@@ -61,12 +62,13 @@ def get_latest_risk_history(limit=2):
             boj_rate_risk,
             usd_jpy_risk,
             industrial_production_risk,
+            machinery_orders_risk,
             total_risk,
             risk_status,
             economic_condition,
             anomaly_level
         FROM risk_history
-        WHERE data_key LIKE '%INDUSTRIAL_PRODUCTION=%'
+        WHERE data_key LIKE '%MACHINERY_ORDERS=%'
         ORDER BY id DESC
         LIMIT ?
     """, (limit,))
@@ -164,6 +166,11 @@ def build_fact_texts():
         2
     )
 
+    machinery_orders_rows = get_latest_values(
+        MACHINERY_ORDERS_INDICATOR,
+        2
+    )
+
     if len(cpi_rows) < 2:
         raise RuntimeError(
             "CPIの比較データが不足しています。"
@@ -202,6 +209,11 @@ def build_fact_texts():
     if len(industrial_production_rows) < 2:
         raise RuntimeError(
             "鉱工業生産指数の比較データが不足しています。"
+        )
+
+    if len(machinery_orders_rows) < 2:
+        raise RuntimeError(
+            "機械受注の比較データが不足しています。"
         )
 
     (
@@ -300,6 +312,18 @@ def build_fact_texts():
         _
     ) = industrial_production_rows[1]
 
+    (
+        machinery_orders_latest_date,
+        machinery_orders_latest_value,
+        _
+    ) = machinery_orders_rows[0]
+
+    (
+        machinery_orders_previous_date,
+        machinery_orders_previous_value,
+        _
+    ) = machinery_orders_rows[1]
+
     cpi_direction = get_direction(
         cpi_latest_value,
         cpi_previous_value
@@ -338,6 +362,11 @@ def build_fact_texts():
     industrial_production_direction = get_direction(
         industrial_production_latest_value,
         industrial_production_previous_value
+    )
+
+    machinery_orders_direction = get_direction(
+        machinery_orders_latest_value,
+        machinery_orders_previous_value
     )
 
     cpi_fact = (
@@ -394,6 +423,13 @@ def build_fact_texts():
         f"前回の{industrial_production_previous_value}から"
         f"最新の{industrial_production_latest_value}へ"
         f"{industrial_production_direction}。"
+    )
+
+    machinery_orders_fact = (
+        f"機械受注（船舶・電力を除く民需、季節調整値）は、"
+        f"前回の{machinery_orders_previous_value}百万円から"
+        f"最新の{machinery_orders_latest_value}百万円へ"
+        f"{machinery_orders_direction}。"
     )
 
     decline_streak = (
@@ -497,6 +533,18 @@ def build_fact_texts():
         "industrial_production_previous_value":
             industrial_production_previous_value,
 
+        "machinery_orders_latest_date":
+            machinery_orders_latest_date,
+
+        "machinery_orders_previous_date":
+            machinery_orders_previous_date,
+
+        "machinery_orders_latest_value":
+            machinery_orders_latest_value,
+
+        "machinery_orders_previous_value":
+            machinery_orders_previous_value,
+
         "cpi_fact":
             cpi_fact,
 
@@ -521,6 +569,9 @@ def build_fact_texts():
         "industrial_production_fact":
             industrial_production_fact,
 
+        "machinery_orders_fact":
+            machinery_orders_fact,
+
         "real_wage_decline_streak":
             decline_streak,
     }
@@ -542,6 +593,7 @@ def build_reason_text(
         f"{facts['boj_rate_fact']}\n"
         f"{facts['usd_jpy_fact']}\n"
         f"{facts['industrial_production_fact']}\n"
+        f"{facts['machinery_orders_fact']}\n"
         f"総合リスクは"
         f"{current_risk['total_risk']} / 100で、"
         f"総合判定は"
@@ -630,6 +682,9 @@ def build_prompt(
 - ドル円の上昇・低下だけから「円安」「円高」「改善」「悪化」と断定しない。
 - 鉱工業生産指数は「2020年=100」と表現する。
 - 鉱工業生産指数の上昇・低下だけから原因を推測しない。
+- 機械受注は「船舶・電力を除く民需、季節調整値」と表現する。
+- 機械受注の単位は「百万円」と表現する。
+- 機械受注の上昇・低下だけから原因を推測しない。
 - 判断理由はPython生成済みの文章をそのまま使用する。
 - 判断理由の文章を書き換えない。
 - 思考過程を出力しない。
@@ -662,6 +717,9 @@ def build_prompt(
 ■ 鉱工業生産
 {facts['industrial_production_fact']}
 
+■ 機械受注
+{facts['machinery_orders_fact']}
+
 【判断理由】
 {reason_text}
 
@@ -674,6 +732,7 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 日銀金利リスク: {current_risk['boj_rate_risk']} / 100
 ドル円リスク: {current_risk['usd_jpy_risk']} / 100
 鉱工業生産リスク: {current_risk['industrial_production_risk']} / 100
+機械受注リスク: {current_risk['machinery_orders_risk']} / 100
 総合リスク: {current_risk['total_risk']} / 100
 総合判定: {current_risk['risk_status']}
 
@@ -716,6 +775,9 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 ■ 鉱工業生産
 {facts['industrial_production_fact']}
 
+■ 機械受注
+{facts['machinery_orders_fact']}
+
 ■ リスク
 CPIリスク: {current_risk['cpi_risk']} / 100
 GDPリスク: {current_risk['gdp_risk']} / 100
@@ -725,6 +787,7 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 日銀金利リスク: {current_risk['boj_rate_risk']} / 100
 ドル円リスク: {current_risk['usd_jpy_risk']} / 100
 鉱工業生産リスク: {current_risk['industrial_production_risk']} / 100
+機械受注リスク: {current_risk['machinery_orders_risk']} / 100
 総合リスク: {current_risk['total_risk']} / 100
 総合判定: {current_risk['risk_status']}
 
@@ -745,7 +808,7 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 {reason_text}
 
 ■ 注意事項
-この8指標だけでは日本経済全体を完全には判断できない。
+この9指標だけでは日本経済全体を完全には判断できない。
 """
 
     return prompt
@@ -922,17 +985,20 @@ def row_to_risk_dict(row):
         "industrial_production_risk":
             row[10],
 
-        "total_risk":
+        "machinery_orders_risk":
             row[11],
 
-        "risk_status":
+        "total_risk":
             row[12],
 
-        "economic_condition":
+        "risk_status":
             row[13],
 
-        "anomaly_level":
+        "economic_condition":
             row[14],
+
+        "anomaly_level":
+            row[15],
     }
 
 
@@ -941,7 +1007,7 @@ def get_current_risk():
 
     if not rows:
         raise RuntimeError(
-            "8指標版のrisk_historyに"
+            "9指標版のrisk_historyに"
             "データがありません。"
         )
 
@@ -1040,6 +1106,13 @@ def main():
     )
 
     print(
+        "機械受注:",
+        facts["machinery_orders_latest_date"],
+        facts["machinery_orders_latest_value"],
+        "百万円"
+    )
+
+    print(
         "実質賃金連続低下:",
         facts["real_wage_decline_streak"],
         "か月"
@@ -1107,6 +1180,13 @@ def main():
         "鉱工業生産リスク:",
         current_risk[
             "industrial_production_risk"
+        ]
+    )
+
+    print(
+        "機械受注リスク:",
+        current_risk[
+            "machinery_orders_risk"
         ]
     )
 

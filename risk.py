@@ -13,6 +13,7 @@ CONSUMPTION_INDICATOR = "個人消費_前年同月比"
 BOJ_RATE_INDICATOR = "basic_loan_rate"
 USD_JPY_INDICATOR = "usd_jpy"
 INDUSTRIAL_PRODUCTION_INDICATOR = "鉱工業生産指数"
+MACHINERY_ORDERS_INDICATOR = "機械受注（船舶・電力を除く民需）"
 
 
 def create_risk_history_table():
@@ -32,6 +33,7 @@ def create_risk_history_table():
             boj_rate_risk REAL NOT NULL DEFAULT 0,
             usd_jpy_risk REAL NOT NULL DEFAULT 0,
             industrial_production_risk REAL NOT NULL DEFAULT 0,
+            machinery_orders_risk REAL NOT NULL DEFAULT 0,
             total_risk REAL NOT NULL,
             risk_status TEXT NOT NULL,
             economic_condition TEXT NOT NULL,
@@ -90,6 +92,17 @@ def create_risk_history_table():
             "industrial_production_risk列を追加しました"
         )
 
+    if "machinery_orders_risk" not in columns:
+        cur.execute("""
+            ALTER TABLE risk_history
+            ADD COLUMN machinery_orders_risk REAL NOT NULL DEFAULT 0
+        """)
+
+        print(
+            "risk_historyに"
+            "machinery_orders_risk列を追加しました"
+        )
+
     conn.commit()
     conn.close()
 
@@ -101,7 +114,7 @@ def get_previous_total_risk():
     cur.execute("""
         SELECT total_risk
         FROM risk_history
-        WHERE data_key LIKE '%INDUSTRIAL_PRODUCTION=%'
+        WHERE data_key LIKE '%MACHINERY_ORDERS=%'
         ORDER BY id DESC
         LIMIT 1
     """)
@@ -189,6 +202,10 @@ def get_risk_data_key():
         INDUSTRIAL_PRODUCTION_INDICATOR
     )
 
+    machinery_orders_date = get_latest_data_date(
+        MACHINERY_ORDERS_INDICATOR
+    )
+
     return (
         f"CPI={cpi_date}|"
         f"GDP={gdp_date}|"
@@ -197,7 +214,8 @@ def get_risk_data_key():
         f"CONSUMPTION={consumption_date}|"
         f"BOJ_RATE={boj_rate_date}|"
         f"USD_JPY={usd_jpy_date}|"
-        f"INDUSTRIAL_PRODUCTION={industrial_production_date}"
+        f"INDUSTRIAL_PRODUCTION={industrial_production_date}|"
+        f"MACHINERY_ORDERS={machinery_orders_date}"
     )
 
 
@@ -211,6 +229,7 @@ def save_risk_history(
     boj_rate_risk,
     usd_jpy_risk,
     industrial_production_risk,
+    machinery_orders_risk,
     total_risk,
     risk_status,
     condition,
@@ -248,12 +267,13 @@ def save_risk_history(
             boj_rate_risk,
             usd_jpy_risk,
             industrial_production_risk,
+            machinery_orders_risk,
             total_risk,
             risk_status,
             economic_condition,
             anomaly_level
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -267,6 +287,7 @@ def save_risk_history(
         boj_rate_risk,
         usd_jpy_risk,
         industrial_production_risk,
+        machinery_orders_risk,
         total_risk,
         risk_status,
         condition,
@@ -739,6 +760,98 @@ def calculate_industrial_production_risk():
     )
 
 
+def calculate_machinery_orders_risk():
+    rows = get_data(
+        MACHINERY_ORDERS_INDICATOR
+    )
+
+    if len(rows) < 12:
+        return 0, 0, 0
+
+    values = [
+        row[1]
+        for row in rows
+    ]
+
+    # 機械受注は月ごとの振れが大きいため、
+    # 金額の絶対水準より変化率を重視する。
+    recent = values[-61:]
+
+    monthly_changes = []
+
+    for i in range(1, len(recent)):
+        previous = recent[i - 1]
+        current = recent[i]
+
+        if previous == 0:
+            continue
+
+        change = (
+            (current - previous)
+            / abs(previous)
+            * 100
+        )
+
+        monthly_changes.append(change)
+
+    if len(monthly_changes) < 4:
+        return 0, 0, 0
+
+    historical_changes = monthly_changes[:-1]
+
+    mean = statistics.mean(
+        historical_changes
+    )
+
+    std = statistics.stdev(
+        historical_changes
+    )
+
+    latest_change = monthly_changes[-1]
+
+    if std == 0:
+        change_z = 0
+    else:
+        change_z = (
+            latest_change - mean
+        ) / std
+
+    recent_three = monthly_changes[-3:]
+
+    three_month_average = statistics.mean(
+        recent_three
+    )
+
+    # 急激な低下をリスクとして評価する。
+    change_risk = z_to_risk(
+        -change_z
+    )
+
+    # 3か月平均がマイナスの場合もリスク化する。
+    # 平均 -10% 以下で最大100点。
+    trend_risk = max(
+        0,
+        min(
+            -three_month_average
+            / 10
+            * 100,
+            100
+        )
+    )
+
+    # 単月の急変を70%、3か月方向を30%。
+    risk = (
+        change_risk * 0.70
+        + trend_risk * 0.30
+    )
+
+    return (
+        round(risk, 2),
+        round(change_z, 2),
+        round(three_month_average, 2)
+    )
+
+
 def risk_level(score):
     if score < 20:
         return "🟢 安全"
@@ -760,7 +873,8 @@ def detect_simultaneous_deterioration(
     consumption_risk,
     boj_rate_risk,
     usd_jpy_risk,
-    industrial_production_risk
+    industrial_production_risk,
+    machinery_orders_risk
 ):
     risks = [
         cpi_risk,
@@ -770,7 +884,8 @@ def detect_simultaneous_deterioration(
         consumption_risk,
         boj_rate_risk,
         usd_jpy_risk,
-        industrial_production_risk
+        industrial_production_risk,
+        machinery_orders_risk
     ]
 
     deteriorated = sum(
@@ -778,7 +893,10 @@ def detect_simultaneous_deterioration(
         for risk in risks
     )
 
-    if deteriorated >= 8:
+    if deteriorated >= 9:
+        return "🔴 9指標が同時に悪化"
+
+    if deteriorated == 8:
         return "🔴 8指標が同時に悪化"
 
     if deteriorated == 7:
@@ -814,7 +932,8 @@ def anomaly_level(
     consumption_risk,
     boj_rate_risk,
     usd_jpy_risk,
-    industrial_production_risk
+    industrial_production_risk,
+    machinery_orders_risk
 ):
     risks = [
         cpi_risk,
@@ -824,7 +943,8 @@ def anomaly_level(
         consumption_risk,
         boj_rate_risk,
         usd_jpy_risk,
-        industrial_production_risk
+        industrial_production_risk,
+        machinery_orders_risk
     ]
 
     deteriorated = sum(
@@ -861,7 +981,8 @@ def economic_condition(
     consumption_risk,
     boj_rate_risk,
     usd_jpy_risk,
-    industrial_production_risk
+    industrial_production_risk,
+    machinery_orders_risk
 ):
     if (
         gdp_risk >= 40
@@ -955,6 +1076,21 @@ def economic_condition(
     ):
         return "🟠 生産・雇用悪化警戒"
 
+    if (
+        machinery_orders_risk >= 40
+        and industrial_production_risk >= 40
+    ):
+        return "🟠 設備投資・生産減速警戒"
+
+    if (
+        machinery_orders_risk >= 40
+        and gdp_risk >= 40
+    ):
+        return "🟠 設備投資・景気減速警戒"
+
+    if machinery_orders_risk >= 40:
+        return "🟡 設備投資需要低下警戒"
+
     if usd_jpy_risk >= 40:
         return "🟡 為替変動警戒"
 
@@ -1036,16 +1172,23 @@ def main():
         industrial_production_change_z
     ) = calculate_industrial_production_risk()
 
-    # 8指標のウェイト
+    (
+        machinery_orders_risk,
+        machinery_orders_change_z,
+        machinery_orders_three_month_average
+    ) = calculate_machinery_orders_risk()
+
+    # 9指標のウェイト
     # 合計100%
-    cpi_weight = 0.15
-    gdp_weight = 0.19
-    unemployment_weight = 0.15
-    real_wage_weight = 0.15
-    consumption_weight = 0.11
+    cpi_weight = 0.14
+    gdp_weight = 0.18
+    unemployment_weight = 0.14
+    real_wage_weight = 0.14
+    consumption_weight = 0.10
     boj_rate_weight = 0.08
     usd_jpy_weight = 0.08
-    industrial_production_weight = 0.09
+    industrial_production_weight = 0.07
+    machinery_orders_weight = 0.07
 
     total_risk = round(
         cpi_risk * cpi_weight
@@ -1061,7 +1204,9 @@ def main():
         + usd_jpy_risk
         * usd_jpy_weight
         + industrial_production_risk
-        * industrial_production_weight,
+        * industrial_production_weight
+        + machinery_orders_risk
+        * machinery_orders_weight,
         2
     )
 
@@ -1077,7 +1222,8 @@ def main():
         consumption_risk,
         boj_rate_risk,
         usd_jpy_risk,
-        industrial_production_risk
+        industrial_production_risk,
+        machinery_orders_risk
     )
 
     simultaneous = (
@@ -1089,7 +1235,8 @@ def main():
             consumption_risk,
             boj_rate_risk,
             usd_jpy_risk,
-            industrial_production_risk
+            industrial_production_risk,
+            machinery_orders_risk
         )
     )
 
@@ -1102,7 +1249,8 @@ def main():
         consumption_risk,
         boj_rate_risk,
         usd_jpy_risk,
-        industrial_production_risk
+        industrial_production_risk,
+        machinery_orders_risk
     )
 
     risk_change, risk_change_status = (
@@ -1124,6 +1272,7 @@ def main():
         boj_rate_risk,
         usd_jpy_risk,
         industrial_production_risk,
+        machinery_orders_risk,
         total_risk,
         status,
         condition,
@@ -1269,6 +1418,23 @@ def main():
     )
     print()
 
+    print("【機械受注】")
+    print(
+        "前月比Zスコア:",
+        machinery_orders_change_z
+    )
+    print(
+        "直近3か月平均前月比:",
+        machinery_orders_three_month_average,
+        "%"
+    )
+    print(
+        "リスク:",
+        machinery_orders_risk,
+        "/ 100"
+    )
+    print()
+
     print("【総合】")
     print(
         "CPIウェイト:",
@@ -1310,6 +1476,11 @@ def main():
         industrial_production_weight * 100,
         "%"
     )
+    print(
+        "機械受注ウェイト:",
+        machinery_orders_weight * 100,
+        "%"
+    )
     print()
 
     print(
@@ -1329,7 +1500,7 @@ def main():
     if previous_risk is None:
         print(
             "前回リスク: "
-            "8指標版データなし"
+            "9指標版データなし"
         )
     else:
         print(
@@ -1347,7 +1518,7 @@ def main():
     if risk_change is None:
         print(
             "リスク変化: "
-            "8指標版の初回計算のため比較なし"
+            "9指標版の初回計算のため比較なし"
         )
     else:
         print(
