@@ -369,6 +369,27 @@ def build_fact_texts():
         machinery_orders_previous_value
     )
 
+    if machinery_orders_previous_value == 0:
+        machinery_orders_monthly_change = 0.0
+    else:
+        machinery_orders_monthly_change = round(
+            (
+                machinery_orders_latest_value
+                - machinery_orders_previous_value
+            )
+            / abs(machinery_orders_previous_value)
+            * 100,
+            2
+        )
+
+    machinery_orders_latest_display = (
+        f"{machinery_orders_latest_value:,.0f}"
+    )
+
+    machinery_orders_previous_display = (
+        f"{machinery_orders_previous_value:,.0f}"
+    )
+
     cpi_fact = (
         f"CPIの前年同月比は、"
         f"前回の{cpi_previous_value}%から"
@@ -427,9 +448,10 @@ def build_fact_texts():
 
     machinery_orders_fact = (
         f"機械受注（船舶・電力を除く民需、季節調整値）は、"
-        f"前回の{machinery_orders_previous_value}百万円から"
-        f"最新の{machinery_orders_latest_value}百万円へ"
+        f"前回の{machinery_orders_previous_display}百万円から"
+        f"最新の{machinery_orders_latest_display}百万円へ"
         f"{machinery_orders_direction}。"
+        f"前月比は{machinery_orders_monthly_change:+.2f}%である。"
     )
 
     decline_streak = (
@@ -544,6 +566,15 @@ def build_fact_texts():
 
         "machinery_orders_previous_value":
             machinery_orders_previous_value,
+
+        "machinery_orders_latest_display":
+            machinery_orders_latest_display,
+
+        "machinery_orders_previous_display":
+            machinery_orders_previous_display,
+
+        "machinery_orders_monthly_change":
+            machinery_orders_monthly_change,
 
         "cpi_fact":
             cpi_fact,
@@ -671,7 +702,7 @@ def build_prompt(
 - 原因を推測しない。
 - 将来予測をしない。
 - 「改善」「悪化」「回復」「減速」「加速」などの評価語を勝手に追加しない。
-- 「前月比」は完全失業率にだけ使用する。
+- 「前月比」は完全失業率と機械受注にだけ使用する。
 - CPIは必ず「前年同月比」と表現する。
 - GDPは必ず「前年同期比」と表現する。
 - 実質賃金は必ず「前年同月比」と表現する。
@@ -1108,8 +1139,13 @@ def main():
     print(
         "機械受注:",
         facts["machinery_orders_latest_date"],
-        facts["machinery_orders_latest_value"],
+        facts["machinery_orders_latest_display"],
         "百万円"
+    )
+
+    print(
+        "機械受注 前月比:",
+        f"{facts['machinery_orders_monthly_change']:+.2f}%"
     )
 
     print(
