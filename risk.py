@@ -14,6 +14,7 @@ BOJ_RATE_INDICATOR = "basic_loan_rate"
 USD_JPY_INDICATOR = "usd_jpy"
 INDUSTRIAL_PRODUCTION_INDICATOR = "鉱工業生産指数"
 MACHINERY_ORDERS_INDICATOR = "機械受注（船舶・電力を除く民需）"
+COINCIDENT_INDEX_INDICATOR = "景気動向指数（CI一致指数）"
 
 
 def create_risk_history_table():
@@ -34,6 +35,7 @@ def create_risk_history_table():
             usd_jpy_risk REAL NOT NULL DEFAULT 0,
             industrial_production_risk REAL NOT NULL DEFAULT 0,
             machinery_orders_risk REAL NOT NULL DEFAULT 0,
+            coincident_index_risk REAL NOT NULL DEFAULT 0,
             total_risk REAL NOT NULL,
             risk_status TEXT NOT NULL,
             economic_condition TEXT NOT NULL,
@@ -103,6 +105,17 @@ def create_risk_history_table():
             "machinery_orders_risk列を追加しました"
         )
 
+    if "coincident_index_risk" not in columns:
+        cur.execute("""
+            ALTER TABLE risk_history
+            ADD COLUMN coincident_index_risk REAL NOT NULL DEFAULT 0
+        """)
+
+        print(
+            "risk_historyに"
+            "coincident_index_risk列を追加しました"
+        )
+
     conn.commit()
     conn.close()
 
@@ -114,7 +127,7 @@ def get_previous_total_risk():
     cur.execute("""
         SELECT total_risk
         FROM risk_history
-        WHERE data_key LIKE '%MACHINERY_ORDERS=%'
+        WHERE data_key LIKE '%COINCIDENT_INDEX=%'
         ORDER BY id DESC
         LIMIT 1
     """)
@@ -206,6 +219,10 @@ def get_risk_data_key():
         MACHINERY_ORDERS_INDICATOR
     )
 
+    coincident_index_date = get_latest_data_date(
+        COINCIDENT_INDEX_INDICATOR
+    )
+
     return (
         f"CPI={cpi_date}|"
         f"GDP={gdp_date}|"
@@ -215,7 +232,8 @@ def get_risk_data_key():
         f"BOJ_RATE={boj_rate_date}|"
         f"USD_JPY={usd_jpy_date}|"
         f"INDUSTRIAL_PRODUCTION={industrial_production_date}|"
-        f"MACHINERY_ORDERS={machinery_orders_date}"
+        f"MACHINERY_ORDERS={machinery_orders_date}|"
+        f"COINCIDENT_INDEX={coincident_index_date}"
     )
 
 
@@ -230,6 +248,7 @@ def save_risk_history(
     usd_jpy_risk,
     industrial_production_risk,
     machinery_orders_risk,
+    coincident_index_risk,
     total_risk,
     risk_status,
     condition,
@@ -268,12 +287,13 @@ def save_risk_history(
             usd_jpy_risk,
             industrial_production_risk,
             machinery_orders_risk,
+            coincident_index_risk,
             total_risk,
             risk_status,
             economic_condition,
             anomaly_level
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -288,6 +308,7 @@ def save_risk_history(
         usd_jpy_risk,
         industrial_production_risk,
         machinery_orders_risk,
+        coincident_index_risk,
         total_risk,
         risk_status,
         condition,
@@ -852,6 +873,54 @@ def calculate_machinery_orders_risk():
     )
 
 
+def calculate_coincident_index_risk():
+    rows = get_data(
+        COINCIDENT_INDEX_INDICATOR
+    )
+
+    if len(rows) < 12:
+        return 0, 0, 0
+
+    values = [
+        row[1]
+        for row in rows
+    ]
+
+    # CI一致指数は景気の現状を表す指標。
+    # 基準改定や長期構造変化の影響を抑えるため、
+    # 直近5年程度を基準にする。
+    recent = values[-60:]
+
+    level_z = calculate_z_score(
+        recent
+    )
+
+    change_z = calculate_change_z_score(
+        recent
+    )
+
+    # 平常より低い水準、または急低下を
+    # リスクとして評価する。
+    level_risk = z_to_risk(
+        -level_z
+    )
+
+    change_risk = z_to_risk(
+        -change_z
+    )
+
+    risk = (
+        level_risk * 0.50
+        + change_risk * 0.50
+    )
+
+    return (
+        round(risk, 2),
+        round(level_z, 2),
+        round(change_z, 2)
+    )
+
+
 def risk_level(score):
     if score < 20:
         return "🟢 安全"
@@ -874,7 +943,8 @@ def detect_simultaneous_deterioration(
     boj_rate_risk,
     usd_jpy_risk,
     industrial_production_risk,
-    machinery_orders_risk
+    machinery_orders_risk,
+    coincident_index_risk
 ):
     risks = [
         cpi_risk,
@@ -885,7 +955,8 @@ def detect_simultaneous_deterioration(
         boj_rate_risk,
         usd_jpy_risk,
         industrial_production_risk,
-        machinery_orders_risk
+        machinery_orders_risk,
+        coincident_index_risk
     ]
 
     deteriorated = sum(
@@ -893,7 +964,10 @@ def detect_simultaneous_deterioration(
         for risk in risks
     )
 
-    if deteriorated >= 9:
+    if deteriorated >= 10:
+        return "🔴 10指標が同時に悪化"
+
+    if deteriorated == 9:
         return "🔴 9指標が同時に悪化"
 
     if deteriorated == 8:
@@ -933,7 +1007,8 @@ def anomaly_level(
     boj_rate_risk,
     usd_jpy_risk,
     industrial_production_risk,
-    machinery_orders_risk
+    machinery_orders_risk,
+    coincident_index_risk
 ):
     risks = [
         cpi_risk,
@@ -944,7 +1019,8 @@ def anomaly_level(
         boj_rate_risk,
         usd_jpy_risk,
         industrial_production_risk,
-        machinery_orders_risk
+        machinery_orders_risk,
+        coincident_index_risk
     ]
 
     deteriorated = sum(
@@ -982,7 +1058,8 @@ def economic_condition(
     boj_rate_risk,
     usd_jpy_risk,
     industrial_production_risk,
-    machinery_orders_risk
+    machinery_orders_risk,
+    coincident_index_risk
 ):
     if (
         gdp_risk >= 40
@@ -1088,6 +1165,21 @@ def economic_condition(
     ):
         return "🟠 設備投資・景気減速警戒"
 
+    if (
+        coincident_index_risk >= 40
+        and gdp_risk >= 40
+    ):
+        return "🟠 景気動向・GDP減速警戒"
+
+    if (
+        coincident_index_risk >= 40
+        and industrial_production_risk >= 40
+    ):
+        return "🟠 景気動向・生産活動低下警戒"
+
+    if coincident_index_risk >= 40:
+        return "🟡 景気動向悪化警戒"
+
     if machinery_orders_risk >= 40:
         return "🟡 設備投資需要低下警戒"
 
@@ -1178,17 +1270,24 @@ def main():
         machinery_orders_three_month_average
     ) = calculate_machinery_orders_risk()
 
-    # 9指標のウェイト
+    (
+        coincident_index_risk,
+        coincident_index_level_z,
+        coincident_index_change_z
+    ) = calculate_coincident_index_risk()
+
+    # 10指標のウェイト
     # 合計100%
-    cpi_weight = 0.14
-    gdp_weight = 0.18
-    unemployment_weight = 0.14
-    real_wage_weight = 0.14
-    consumption_weight = 0.10
+    cpi_weight = 0.13
+    gdp_weight = 0.17
+    unemployment_weight = 0.13
+    real_wage_weight = 0.13
+    consumption_weight = 0.09
     boj_rate_weight = 0.08
-    usd_jpy_weight = 0.08
+    usd_jpy_weight = 0.07
     industrial_production_weight = 0.07
-    machinery_orders_weight = 0.07
+    machinery_orders_weight = 0.06
+    coincident_index_weight = 0.07
 
     total_risk = round(
         cpi_risk * cpi_weight
@@ -1206,7 +1305,9 @@ def main():
         + industrial_production_risk
         * industrial_production_weight
         + machinery_orders_risk
-        * machinery_orders_weight,
+        * machinery_orders_weight
+        + coincident_index_risk
+        * coincident_index_weight,
         2
     )
 
@@ -1223,7 +1324,8 @@ def main():
         boj_rate_risk,
         usd_jpy_risk,
         industrial_production_risk,
-        machinery_orders_risk
+        machinery_orders_risk,
+        coincident_index_risk
     )
 
     simultaneous = (
@@ -1236,7 +1338,8 @@ def main():
             boj_rate_risk,
             usd_jpy_risk,
             industrial_production_risk,
-            machinery_orders_risk
+            machinery_orders_risk,
+            coincident_index_risk
         )
     )
 
@@ -1250,7 +1353,8 @@ def main():
         boj_rate_risk,
         usd_jpy_risk,
         industrial_production_risk,
-        machinery_orders_risk
+        machinery_orders_risk,
+        coincident_index_risk
     )
 
     risk_change, risk_change_status = (
@@ -1273,6 +1377,7 @@ def main():
         usd_jpy_risk,
         industrial_production_risk,
         machinery_orders_risk,
+        coincident_index_risk,
         total_risk,
         status,
         condition,
@@ -1435,6 +1540,22 @@ def main():
     )
     print()
 
+    print("【景気動向指数（CI一致指数）】")
+    print(
+        "水準Zスコア:",
+        coincident_index_level_z
+    )
+    print(
+        "変化Zスコア:",
+        coincident_index_change_z
+    )
+    print(
+        "リスク:",
+        coincident_index_risk,
+        "/ 100"
+    )
+    print()
+
     print("【総合】")
     print(f"CPIウェイト: {cpi_weight * 100:.1f} %")
     print(f"GDPウェイト: {gdp_weight * 100:.1f} %")
@@ -1450,6 +1571,10 @@ def main():
     print(
         f"機械受注ウェイト: "
         f"{machinery_orders_weight * 100:.1f} %"
+    )
+    print(
+        f"CI一致指数ウェイト: "
+        f"{coincident_index_weight * 100:.1f} %"
     )
     print()
 
@@ -1470,7 +1595,7 @@ def main():
     if previous_risk is None:
         print(
             "前回リスク: "
-            "9指標版データなし"
+            "10指標版データなし"
         )
     else:
         print(
@@ -1488,7 +1613,7 @@ def main():
     if risk_change is None:
         print(
             "リスク変化: "
-            "9指標版の初回計算のため比較なし"
+            "10指標版の初回計算のため比較なし"
         )
     else:
         print(

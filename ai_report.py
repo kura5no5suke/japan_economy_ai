@@ -17,6 +17,7 @@ BOJ_RATE_INDICATOR = "basic_loan_rate"
 USD_JPY_INDICATOR = "usd_jpy"
 INDUSTRIAL_PRODUCTION_INDICATOR = "鉱工業生産指数"
 MACHINERY_ORDERS_INDICATOR = "機械受注（船舶・電力を除く民需）"
+COINCIDENT_INDEX_INDICATOR = "景気動向指数（CI一致指数）"
 
 load_dotenv()
 
@@ -63,12 +64,13 @@ def get_latest_risk_history(limit=2):
             usd_jpy_risk,
             industrial_production_risk,
             machinery_orders_risk,
+            coincident_index_risk,
             total_risk,
             risk_status,
             economic_condition,
             anomaly_level
         FROM risk_history
-        WHERE data_key LIKE '%MACHINERY_ORDERS=%'
+        WHERE data_key LIKE '%COINCIDENT_INDEX=%'
         ORDER BY id DESC
         LIMIT ?
     """, (limit,))
@@ -171,6 +173,11 @@ def build_fact_texts():
         2
     )
 
+    coincident_index_rows = get_latest_values(
+        COINCIDENT_INDEX_INDICATOR,
+        2
+    )
+
     if len(cpi_rows) < 2:
         raise RuntimeError(
             "CPIの比較データが不足しています。"
@@ -214,6 +221,11 @@ def build_fact_texts():
     if len(machinery_orders_rows) < 2:
         raise RuntimeError(
             "機械受注の比較データが不足しています。"
+        )
+
+    if len(coincident_index_rows) < 2:
+        raise RuntimeError(
+            "景気動向指数（CI一致指数）の比較データが不足しています。"
         )
 
     (
@@ -324,6 +336,18 @@ def build_fact_texts():
         _
     ) = machinery_orders_rows[1]
 
+    (
+        coincident_index_latest_date,
+        coincident_index_latest_value,
+        _
+    ) = coincident_index_rows[0]
+
+    (
+        coincident_index_previous_date,
+        coincident_index_previous_value,
+        _
+    ) = coincident_index_rows[1]
+
     cpi_direction = get_direction(
         cpi_latest_value,
         cpi_previous_value
@@ -369,6 +393,11 @@ def build_fact_texts():
         machinery_orders_previous_value
     )
 
+    coincident_index_direction = get_direction(
+        coincident_index_latest_value,
+        coincident_index_previous_value
+    )
+
     if machinery_orders_previous_value == 0:
         machinery_orders_monthly_change = 0.0
     else:
@@ -389,6 +418,19 @@ def build_fact_texts():
     machinery_orders_previous_display = (
         f"{machinery_orders_previous_value:,.0f}"
     )
+
+    if coincident_index_previous_value == 0:
+        coincident_index_monthly_change = 0.0
+    else:
+        coincident_index_monthly_change = round(
+            (
+                coincident_index_latest_value
+                - coincident_index_previous_value
+            )
+            / abs(coincident_index_previous_value)
+            * 100,
+            2
+        )
 
     cpi_fact = (
         f"CPIの前年同月比は、"
@@ -452,6 +494,14 @@ def build_fact_texts():
         f"最新の{machinery_orders_latest_display}百万円へ"
         f"{machinery_orders_direction}。"
         f"前月比は{machinery_orders_monthly_change:+.2f}%である。"
+    )
+
+    coincident_index_fact = (
+        f"景気動向指数のCI一致指数（2020年=100）は、"
+        f"前回の{coincident_index_previous_value}から"
+        f"最新の{coincident_index_latest_value}へ"
+        f"{coincident_index_direction}。"
+        f"前月比は{coincident_index_monthly_change:+.2f}%である。"
     )
 
     decline_streak = (
@@ -576,6 +626,21 @@ def build_fact_texts():
         "machinery_orders_monthly_change":
             machinery_orders_monthly_change,
 
+        "coincident_index_latest_date":
+            coincident_index_latest_date,
+
+        "coincident_index_previous_date":
+            coincident_index_previous_date,
+
+        "coincident_index_latest_value":
+            coincident_index_latest_value,
+
+        "coincident_index_previous_value":
+            coincident_index_previous_value,
+
+        "coincident_index_monthly_change":
+            coincident_index_monthly_change,
+
         "cpi_fact":
             cpi_fact,
 
@@ -603,6 +668,9 @@ def build_fact_texts():
         "machinery_orders_fact":
             machinery_orders_fact,
 
+        "coincident_index_fact":
+            coincident_index_fact,
+
         "real_wage_decline_streak":
             decline_streak,
     }
@@ -625,6 +693,7 @@ def build_reason_text(
         f"{facts['usd_jpy_fact']}\n"
         f"{facts['industrial_production_fact']}\n"
         f"{facts['machinery_orders_fact']}\n"
+        f"{facts['coincident_index_fact']}\n"
         f"総合リスクは"
         f"{current_risk['total_risk']} / 100で、"
         f"総合判定は"
@@ -702,7 +771,7 @@ def build_prompt(
 - 原因を推測しない。
 - 将来予測をしない。
 - 「改善」「悪化」「回復」「減速」「加速」などの評価語を勝手に追加しない。
-- 「前月比」は完全失業率と機械受注にだけ使用する。
+- 「前月比」は完全失業率、機械受注、景気動向指数（CI一致指数）にだけ使用する。
 - CPIは必ず「前年同月比」と表現する。
 - GDPは必ず「前年同期比」と表現する。
 - 実質賃金は必ず「前年同月比」と表現する。
@@ -716,6 +785,8 @@ def build_prompt(
 - 機械受注は「船舶・電力を除く民需、季節調整値」と表現する。
 - 機械受注の単位は「百万円」と表現する。
 - 機械受注の上昇・低下だけから原因を推測しない。
+- 景気動向指数は「CI一致指数（2020年=100）」と表現する。
+- 景気動向指数の上昇・低下だけから原因を推測しない。
 - 判断理由はPython生成済みの文章をそのまま使用する。
 - 判断理由の文章を書き換えない。
 - 思考過程を出力しない。
@@ -751,6 +822,9 @@ def build_prompt(
 ■ 機械受注
 {facts['machinery_orders_fact']}
 
+■ 景気動向指数
+{facts['coincident_index_fact']}
+
 【判断理由】
 {reason_text}
 
@@ -764,6 +838,7 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 ドル円リスク: {current_risk['usd_jpy_risk']} / 100
 鉱工業生産リスク: {current_risk['industrial_production_risk']} / 100
 機械受注リスク: {current_risk['machinery_orders_risk']} / 100
+CI一致指数リスク: {current_risk['coincident_index_risk']} / 100
 総合リスク: {current_risk['total_risk']} / 100
 総合判定: {current_risk['risk_status']}
 
@@ -809,6 +884,9 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 ■ 機械受注
 {facts['machinery_orders_fact']}
 
+■ 景気動向指数
+{facts['coincident_index_fact']}
+
 ■ リスク
 CPIリスク: {current_risk['cpi_risk']} / 100
 GDPリスク: {current_risk['gdp_risk']} / 100
@@ -819,6 +897,7 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 ドル円リスク: {current_risk['usd_jpy_risk']} / 100
 鉱工業生産リスク: {current_risk['industrial_production_risk']} / 100
 機械受注リスク: {current_risk['machinery_orders_risk']} / 100
+CI一致指数リスク: {current_risk['coincident_index_risk']} / 100
 総合リスク: {current_risk['total_risk']} / 100
 総合判定: {current_risk['risk_status']}
 
@@ -839,7 +918,7 @@ GDPリスク: {current_risk['gdp_risk']} / 100
 {reason_text}
 
 ■ 注意事項
-この9指標だけでは日本経済全体を完全には判断できない。
+この10指標だけでは日本経済全体を完全には判断できない。
 """
 
     return prompt
@@ -1019,17 +1098,20 @@ def row_to_risk_dict(row):
         "machinery_orders_risk":
             row[11],
 
-        "total_risk":
+        "coincident_index_risk":
             row[12],
 
-        "risk_status":
+        "total_risk":
             row[13],
 
-        "economic_condition":
+        "risk_status":
             row[14],
 
-        "anomaly_level":
+        "economic_condition":
             row[15],
+
+        "anomaly_level":
+            row[16],
     }
 
 
@@ -1038,7 +1120,7 @@ def get_current_risk():
 
     if not rows:
         raise RuntimeError(
-            "9指標版のrisk_historyに"
+            "10指標版のrisk_historyに"
             "データがありません。"
         )
 
@@ -1149,6 +1231,18 @@ def main():
     )
 
     print(
+        "景気動向指数 CI一致指数:",
+        facts["coincident_index_latest_date"],
+        facts["coincident_index_latest_value"],
+        "(2020年=100)"
+    )
+
+    print(
+        "CI一致指数 前月比:",
+        f"{facts['coincident_index_monthly_change']:+.2f}%"
+    )
+
+    print(
         "実質賃金連続低下:",
         facts["real_wage_decline_streak"],
         "か月"
@@ -1223,6 +1317,13 @@ def main():
         "機械受注リスク:",
         current_risk[
             "machinery_orders_risk"
+        ]
+    )
+
+    print(
+        "CI一致指数リスク:",
+        current_risk[
+            "coincident_index_risk"
         ]
     )
 

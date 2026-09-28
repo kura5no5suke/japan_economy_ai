@@ -66,6 +66,9 @@ jobs:
       - name: Run machinery orders
         run: python machinery_orders.py
 
+      - name: Run coincident index
+        run: python coincident_index.py
+
       - name: Run risk calculation
         run: python risk.py
 

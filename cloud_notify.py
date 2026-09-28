@@ -28,13 +28,14 @@ def get_latest_risk():
             usd_jpy_risk,
             industrial_production_risk,
             machinery_orders_risk,
+            coincident_index_risk,
             total_risk,
             risk_status,
             economic_condition,
             anomaly_level
         FROM risk_history
         WHERE data_key
-            LIKE '%MACHINERY_ORDERS=%'
+            LIKE '%COINCIDENT_INDEX=%'
         ORDER BY id DESC
         LIMIT 1
     """)
@@ -101,7 +102,7 @@ def main():
 
     if row is None:
         print(
-            "9指標版のリスクデータが"
+            "10指標版のリスクデータが"
             "ありません。"
         )
         return
@@ -116,6 +117,7 @@ def main():
         usd_jpy_risk,
         industrial_production_risk,
         machinery_orders_risk,
+        coincident_index_risk,
         total_risk,
         risk_status,
         economic_condition,
@@ -139,7 +141,9 @@ def main():
         f"鉱工業生産リスク: "
         f"{industrial_production_risk} / 100\n"
         f"機械受注リスク: "
-        f"{machinery_orders_risk} / 100\n\n"
+        f"{machinery_orders_risk} / 100\n"
+        f"CI一致指数リスク: "
+        f"{coincident_index_risk} / 100\n\n"
         f"総合リスク: {total_risk} / 100\n"
         f"総合判定: {risk_status}\n"
         f"経済状態: {economic_condition}\n"

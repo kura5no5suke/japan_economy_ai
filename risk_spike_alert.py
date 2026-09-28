@@ -28,14 +28,14 @@ def get_latest_two_risks():
         for row in cursor.fetchall()
     ]
 
-    # 9指標版では data_key に
-    # MACHINERY_ORDERS= が入っている
+    # 10指標版では data_key に
+    # COINCIDENT_INDEX= が入っている
     if "data_key" in columns:
         cursor.execute("""
             SELECT total_risk
             FROM risk_history
             WHERE data_key
-                LIKE '%MACHINERY_ORDERS=%'
+                LIKE '%COINCIDENT_INDEX=%'
             ORDER BY id DESC
             LIMIT 2
         """)
@@ -126,7 +126,7 @@ def main():
 
     if result is None:
         print(
-            "比較できる9指標版の"
+            "比較できる10指標版の"
             "リスク履歴が2件ありません。"
         )
 
@@ -171,7 +171,7 @@ def main():
 
         message = (
             "🚨 日本経済監視AI 緊急警告\n\n"
-            "9指標版の総合リスクが"
+            "10指標版の総合リスクが"
             "急上昇しました。\n\n"
             f"前回: "
             f"{previous_risk:.2f} / 100\n"
