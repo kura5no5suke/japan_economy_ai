@@ -1436,50 +1436,20 @@ def main():
     print()
 
     print("【総合】")
+    print(f"CPIウェイト: {cpi_weight * 100:.1f} %")
+    print(f"GDPウェイト: {gdp_weight * 100:.1f} %")
+    print(f"失業率ウェイト: {unemployment_weight * 100:.1f} %")
+    print(f"実質賃金ウェイト: {real_wage_weight * 100:.1f} %")
+    print(f"個人消費ウェイト: {consumption_weight * 100:.1f} %")
+    print(f"日銀金利ウェイト: {boj_rate_weight * 100:.1f} %")
+    print(f"ドル円ウェイト: {usd_jpy_weight * 100:.1f} %")
     print(
-        "CPIウェイト:",
-        cpi_weight * 100,
-        "%"
+        f"鉱工業生産ウェイト: "
+        f"{industrial_production_weight * 100:.1f} %"
     )
     print(
-        "GDPウェイト:",
-        gdp_weight * 100,
-        "%"
-    )
-    print(
-        "失業率ウェイト:",
-        unemployment_weight * 100,
-        "%"
-    )
-    print(
-        "実質賃金ウェイト:",
-        real_wage_weight * 100,
-        "%"
-    )
-    print(
-        "個人消費ウェイト:",
-        consumption_weight * 100,
-        "%"
-    )
-    print(
-        "日銀金利ウェイト:",
-        boj_rate_weight * 100,
-        "%"
-    )
-    print(
-        "ドル円ウェイト:",
-        usd_jpy_weight * 100,
-        "%"
-    )
-    print(
-        "鉱工業生産ウェイト:",
-        industrial_production_weight * 100,
-        "%"
-    )
-    print(
-        "機械受注ウェイト:",
-        machinery_orders_weight * 100,
-        "%"
+        f"機械受注ウェイト: "
+        f"{machinery_orders_weight * 100:.1f} %"
     )
     print()
 
