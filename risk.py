@@ -921,6 +921,117 @@ def calculate_coincident_index_risk():
     )
 
 
+
+def calculate_direction_score(indicator, periods=3, inverse=False):
+    """直近の方向性を -100 ～ +100 で評価する。"""
+    rows = get_data(indicator)
+
+    if len(rows) < periods + 1:
+        return 0.0, "データ不足"
+
+    values = [row[1] for row in rows[-(periods + 1):]]
+    changes = []
+
+    for i in range(1, len(values)):
+        previous = values[i - 1]
+        current = values[i]
+
+        if previous == 0:
+            change = current - previous
+        else:
+            change = (current - previous) / abs(previous) * 100
+
+        if inverse:
+            change = -change
+
+        changes.append(change)
+
+    positive = sum(change > 0 for change in changes)
+    negative = sum(change < 0 for change in changes)
+    score = (positive - negative) / len(changes) * 100
+
+    # 3期間の方向性を5段階で表現する。
+    # 小幅でも改善・悪化の広がりを取りこぼさない一方、
+    # 方向が揃った場合は「強い」と区別する。
+    if score >= 66:
+        label = "強い改善"
+    elif score >= 20:
+        label = "改善"
+    elif score <= -66:
+        label = "強い悪化"
+    elif score <= -20:
+        label = "悪化"
+    else:
+        label = "中立"
+
+    return round(score, 2), label
+
+
+def calculate_economic_trend():
+    """
+    GDPは直近3四半期、月次系列は直近3か月の方向性を使う。
+    失業率は低下を改善として扱う。
+    """
+    specs = [
+        ("GDP", GDP_INDICATOR, 3, False, 0.20),
+        ("完全失業率", UNEMPLOYMENT_INDICATOR, 3, True, 0.15),
+        ("実質賃金", REAL_WAGE_INDICATOR, 3, False, 0.10),
+        ("個人消費", CONSUMPTION_INDICATOR, 3, False, 0.15),
+        ("鉱工業生産", INDUSTRIAL_PRODUCTION_INDICATOR, 3, False, 0.15),
+        ("機械受注", MACHINERY_ORDERS_INDICATOR, 3, False, 0.10),
+        ("CI一致指数", COINCIDENT_INDEX_INDICATOR, 3, False, 0.15),
+    ]
+
+    details = []
+    weighted_score = 0.0
+    total_weight = 0.0
+
+    for name, indicator, periods, inverse, weight in specs:
+        score, label = calculate_direction_score(
+            indicator,
+            periods=periods,
+            inverse=inverse
+        )
+
+        if label == "データ不足":
+            details.append((name, score, label))
+            continue
+
+        weighted_score += score * weight
+        total_weight += weight
+        details.append((name, score, label))
+
+    if total_weight == 0:
+        return 0.0, "⚪ 判定不能", details, 0, 0, 0
+
+    trend_score = round(weighted_score / total_weight, 2)
+    improving = sum(
+        label in ("強い改善", "改善")
+        for _, _, label in details
+    )
+    worsening = sum(
+        label in ("強い悪化", "悪化")
+        for _, _, label in details
+    )
+    mixed = sum(
+        label == "中立"
+        for _, _, label in details
+    )
+
+    if trend_score >= 60 and improving >= 5:
+        status = "🟢 回復加速"
+    elif trend_score >= 20 and improving >= 4:
+        status = "🟢 回復"
+    elif trend_score <= -60 and worsening >= 5:
+        status = "🔴 後退警戒"
+    elif trend_score <= -20 and worsening >= 4:
+        status = "🟡 減速"
+    else:
+        status = "⚪ 横ばい"
+
+    return trend_score, status, details, improving, worsening, mixed
+
+
 def risk_level(score):
     if score < 20:
         return "🟢 安全"
@@ -1315,6 +1426,15 @@ def main():
         total_risk
     )
 
+    (
+        trend_score,
+        trend_status,
+        trend_details,
+        trend_improving,
+        trend_worsening,
+        trend_mixed
+    ) = calculate_economic_trend()
+
     condition = economic_condition(
         cpi_risk,
         gdp_risk,
@@ -1632,6 +1752,28 @@ def main():
         "経済状態:",
         condition
     )
+    print()
+
+    print("【景気トレンド判定】")
+    print("トレンドスコア:", trend_score, "/ -100 ～ +100")
+    print("トレンド判定:", trend_status)
+    print(
+        "改善:",
+        trend_improving,
+        "指標 / 悪化:",
+        trend_worsening,
+        "指標 / 中立:",
+        trend_mixed,
+        "指標"
+    )
+
+    for trend_name, indicator_score, trend_label in trend_details:
+        print(
+            f"{trend_name}: "
+            f"{trend_label} "
+            f"({indicator_score:+.2f})"
+        )
+
     print()
 
     print("【異常検知】")

@@ -4,6 +4,11 @@ import requests
 from datetime import datetime
 from dotenv import load_dotenv
 
+from risk import (
+    calculate_economic_trend,
+    detect_simultaneous_deterioration,
+)
+
 
 DB_PATH = "data/economy.db"
 REPORT_DIR = "reports"
@@ -735,7 +740,14 @@ def build_prompt(
     facts,
     current_risk,
     previous_risk,
-    reason_text
+    reason_text,
+    simultaneous,
+    trend_score,
+    trend_status,
+    trend_details,
+    trend_improving,
+    trend_worsening,
+    trend_mixed
 ):
     if previous_risk is None:
         previous_risk_text = "データなし"
@@ -849,8 +861,17 @@ CI一致指数リスク: {current_risk['coincident_index_risk']} / 100
 変化判定: {risk_change_status}
 
 【異常検知】
-同時悪化: {current_risk['economic_condition']}
+同時悪化: {simultaneous}
 異常レベル: {current_risk['anomaly_level']}
+
+【景気トレンド判定】
+トレンドスコア: {trend_score} / -100 ～ +100
+トレンド判定: {trend_status}
+改善: {trend_improving}指標
+悪化: {trend_worsening}指標
+中立: {trend_mixed}指標
+詳細:
+{trend_details}
 
 【出力形式】
 
@@ -908,8 +929,14 @@ CI一致指数リスク: {current_risk['coincident_index_risk']} / 100
 変化判定: {risk_change_status}
 
 ■ 異常検知
-同時悪化: {current_risk['economic_condition']}
+同時悪化: {simultaneous}
 異常レベル: {current_risk['anomaly_level']}
+
+■ 景気トレンド
+トレンドスコア: {trend_score} / -100 ～ +100
+トレンド判定: {trend_status}
+改善: {trend_improving}指標 / 悪化: {trend_worsening}指標 / 中立: {trend_mixed}指標
+{trend_details}
 
 ■ 総合評価
 {current_risk['economic_condition']}
@@ -1341,6 +1368,33 @@ def main():
         ]
     )
 
+    simultaneous = detect_simultaneous_deterioration(
+        current_risk["cpi_risk"],
+        current_risk["gdp_risk"],
+        current_risk["unemployment_risk"],
+        current_risk["real_wage_risk"],
+        current_risk["consumption_risk"],
+        current_risk["boj_rate_risk"],
+        current_risk["usd_jpy_risk"],
+        current_risk["industrial_production_risk"],
+        current_risk["machinery_orders_risk"],
+        current_risk["coincident_index_risk"]
+    )
+
+    (
+        trend_score,
+        trend_status,
+        trend_detail_rows,
+        trend_improving,
+        trend_worsening,
+        trend_mixed
+    ) = calculate_economic_trend()
+
+    trend_details = "\n".join(
+        f"- {name}: {label} ({score:+.2f})"
+        for name, score, label in trend_detail_rows
+    )
+
     reason_text = build_reason_text(
         facts,
         current_risk
@@ -1350,7 +1404,14 @@ def main():
         facts,
         current_risk,
         previous_risk,
-        reason_text
+        reason_text,
+        simultaneous,
+        trend_score,
+        trend_status,
+        trend_details,
+        trend_improving,
+        trend_worsening,
+        trend_mixed
     )
 
     print()
@@ -1399,7 +1460,10 @@ def main():
             f"総合判定: "
             f"{current_risk['risk_status']}\n"
             f"異常レベル: "
-            f"{current_risk['anomaly_level']}\n\n"
+            f"{current_risk['anomaly_level']}\n"
+            f"同時悪化: {simultaneous}\n"
+            f"景気トレンド: {trend_status} "
+            f"({trend_score:+.2f})\n\n"
             f"レポート: "
             f"{os.path.basename(file_path)}"
         )
