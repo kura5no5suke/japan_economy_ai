@@ -2,6 +2,7 @@ import os
 import sqlite3
 import requests
 from dotenv import load_dotenv
+from risk import calculate_economic_trend, detect_simultaneous_deterioration
 
 
 DB_PATH = "data/economy.db"
@@ -124,6 +125,33 @@ def main():
         anomaly_level
     ) = row
 
+    simultaneous = detect_simultaneous_deterioration(
+        cpi_risk,
+        gdp_risk,
+        unemployment_risk,
+        real_wage_risk,
+        consumption_risk,
+        boj_rate_risk,
+        usd_jpy_risk,
+        industrial_production_risk,
+        machinery_orders_risk,
+        coincident_index_risk
+    )
+
+    (
+        trend_score,
+        trend_status,
+        trend_details_data,
+        trend_improving,
+        trend_worsening,
+        trend_mixed
+    ) = calculate_economic_trend()
+
+    trend_details = "\n".join(
+        f"- {name}: {label} ({score:+.2f})"
+        for name, score, label in trend_details_data
+    )
+
     message = (
         "📊 日本経済監視AI\n\n"
         f"CPIリスク: {cpi_risk} / 100\n"
@@ -146,7 +174,16 @@ def main():
         f"{coincident_index_risk} / 100\n\n"
         f"総合リスク: {total_risk} / 100\n"
         f"総合判定: {risk_status}\n"
-        f"経済状態: {economic_condition}\n"
+        f"経済状態: {economic_condition}\n\n"
+        "【景気トレンド判定】\n"
+        f"トレンドスコア: {trend_score} / -100 ～ +100\n"
+        f"トレンド判定: {trend_status}\n"
+        f"改善: {trend_improving}指標 / "
+        f"悪化: {trend_worsening}指標 / "
+        f"中立: {trend_mixed}指標\n"
+        f"{trend_details}\n\n"
+        "【異常検知】\n"
+        f"同時悪化: {simultaneous}\n"
         f"異常レベル: {anomaly_level}"
     )
 
