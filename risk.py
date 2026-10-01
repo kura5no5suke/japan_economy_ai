@@ -182,60 +182,64 @@ def get_latest_data_date(indicator):
     return row[0]
 
 
+def get_latest_data_signature(indicator):
+    """
+    最新データの「日付:値」を返す。
+
+    統計の公表後改定で日付が同じまま値だけ変わった場合も、
+    risk_history が新しい経済データとして認識できるようにする。
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT date, value
+        FROM economic_data
+        WHERE indicator = ?
+        ORDER BY date DESC
+        LIMIT 1
+    """, (indicator,))
+
+    row = cur.fetchone()
+    conn.close()
+
+    if row is None:
+        return None
+
+    date, value = row
+    return f"{date}:{repr(value)}"
+
+
 def get_risk_data_key():
-    cpi_date = get_latest_data_date(
-        CPI_INDICATOR
-    )
-
-    gdp_date = get_latest_data_date(
-        GDP_INDICATOR
-    )
-
-    unemployment_date = get_latest_data_date(
-        UNEMPLOYMENT_INDICATOR
-    )
-
-    real_wage_date = get_latest_data_date(
-        REAL_WAGE_INDICATOR
-    )
-
-    consumption_date = get_latest_data_date(
-        CONSUMPTION_INDICATOR
-    )
-
-    boj_rate_date = get_latest_data_date(
-        BOJ_RATE_INDICATOR
-    )
-
-    usd_jpy_date = get_latest_data_date(
-        USD_JPY_INDICATOR
-    )
-
-    industrial_production_date = get_latest_data_date(
+    cpi_data = get_latest_data_signature(CPI_INDICATOR)
+    gdp_data = get_latest_data_signature(GDP_INDICATOR)
+    unemployment_data = get_latest_data_signature(UNEMPLOYMENT_INDICATOR)
+    real_wage_data = get_latest_data_signature(REAL_WAGE_INDICATOR)
+    consumption_data = get_latest_data_signature(CONSUMPTION_INDICATOR)
+    boj_rate_data = get_latest_data_signature(BOJ_RATE_INDICATOR)
+    usd_jpy_data = get_latest_data_signature(USD_JPY_INDICATOR)
+    industrial_production_data = get_latest_data_signature(
         INDUSTRIAL_PRODUCTION_INDICATOR
     )
-
-    machinery_orders_date = get_latest_data_date(
+    machinery_orders_data = get_latest_data_signature(
         MACHINERY_ORDERS_INDICATOR
     )
-
-    coincident_index_date = get_latest_data_date(
+    coincident_index_data = get_latest_data_signature(
         COINCIDENT_INDEX_INDICATOR
     )
 
     return (
-        f"CPI={cpi_date}|"
-        f"GDP={gdp_date}|"
-        f"UNEMPLOYMENT={unemployment_date}|"
-        f"REAL_WAGE={real_wage_date}|"
-        f"CONSUMPTION={consumption_date}|"
-        f"BOJ_RATE={boj_rate_date}|"
-        f"USD_JPY={usd_jpy_date}|"
-        f"INDUSTRIAL_PRODUCTION={industrial_production_date}|"
-        f"MACHINERY_ORDERS={machinery_orders_date}|"
-        f"COINCIDENT_INDEX={coincident_index_date}"
+        f"CPI={cpi_data}|"
+        f"GDP={gdp_data}|"
+        f"UNEMPLOYMENT={unemployment_data}|"
+        f"REAL_WAGE={real_wage_data}|"
+        f"CONSUMPTION={consumption_data}|"
+        f"BOJ_RATE={boj_rate_data}|"
+        f"USD_JPY={usd_jpy_data}|"
+        f"INDUSTRIAL_PRODUCTION={industrial_production_data}|"
+        f"MACHINERY_ORDERS={machinery_orders_data}|"
+        f"COINCIDENT_INDEX={coincident_index_data}"
     )
-
 
 def save_risk_history(
     data_key,
