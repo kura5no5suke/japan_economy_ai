@@ -9,6 +9,7 @@ from risk import (
     detect_simultaneous_deterioration,
 )
 
+from leading_warning import calculate_leading_warning
 
 DB_PATH = "data/economy.db"
 REPORT_DIR = "reports"
@@ -747,7 +748,8 @@ def build_prompt(
     trend_details,
     trend_improving,
     trend_worsening,
-    trend_mixed
+    trend_mixed,
+    leading_warning
 ):
     if previous_risk is None:
         previous_risk_text = "データなし"
@@ -873,6 +875,15 @@ CI一致指数リスク: {current_risk['coincident_index_risk']} / 100
 詳細:
 {trend_details}
 
+【景気先行警戒】
+最新年月: {leading_warning["latest_date"]}
+CI先行指数: {leading_warning["latest_value"]} (2020年=100)
+3か月方向: {leading_warning["direction_score"]:+.2f} ({leading_warning["direction_label"]})
+連続低下: {leading_warning["consecutive_declines"]}か月
+3か月変化率: {leading_warning["three_month_change"]:+.2f}%
+先行警戒: {leading_warning["warning_level"]}
+※この先行警戒はCI先行指数の動きからPythonで算出した独自の早期警戒判定であり、将来予測や内閣府の公式な景気判定ではない。
+
 【出力形式】
 
 【日本経済監視レポート】
@@ -937,6 +948,14 @@ CI一致指数リスク: {current_risk['coincident_index_risk']} / 100
 トレンド判定: {trend_status}
 改善: {trend_improving}指標 / 悪化: {trend_worsening}指標 / 中立: {trend_mixed}指標
 {trend_details}
+
+■ 景気先行警戒
+最新年月: {leading_warning["latest_date"]}
+CI先行指数: {leading_warning["latest_value"]} (2020年=100)
+3か月方向: {leading_warning["direction_score"]:+.2f} ({leading_warning["direction_label"]})
+連続低下: {leading_warning["consecutive_declines"]}か月
+3か月変化率: {leading_warning["three_month_change"]:+.2f}%
+先行警戒: {leading_warning["warning_level"]}
 
 ■ 総合評価
 {current_risk['economic_condition']}
@@ -1387,13 +1406,15 @@ def main():
         trend_detail_rows,
         trend_improving,
         trend_worsening,
-        trend_mixed
+        trend_mixed,
     ) = calculate_economic_trend()
 
     trend_details = "\n".join(
         f"- {name}: {label} ({score:+.2f})"
         for name, score, label in trend_detail_rows
     )
+
+    leading_warning = calculate_leading_warning()
 
     reason_text = build_reason_text(
         facts,
@@ -1411,7 +1432,8 @@ def main():
         trend_details,
         trend_improving,
         trend_worsening,
-        trend_mixed
+        trend_mixed,
+    leading_warning
     )
 
     print()

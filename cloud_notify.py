@@ -3,6 +3,7 @@ import sqlite3
 import requests
 from dotenv import load_dotenv
 from risk import calculate_economic_trend, detect_simultaneous_deterioration
+from leading_warning import calculate_leading_warning
 
 
 DB_PATH = "data/economy.db"
@@ -151,6 +152,8 @@ def main():
         f"- {name}: {label} ({score:+.2f})"
         for name, score, label in trend_details_data
     )
+    leading_warning = calculate_leading_warning()
+
 
     message = (
         "📊 日本経済監視AI\n\n"
@@ -182,6 +185,13 @@ def main():
         f"悪化: {trend_worsening}指標 / "
         f"中立: {trend_mixed}指標\n"
         f"{trend_details}\n\n"
+        "【景気先行警戒】\n"
+        f"最新年月: {leading_warning['latest_date']}\n"
+        f"CI先行指数: {leading_warning['latest_value']} (2020年=100)\n"
+        f"3か月方向: {leading_warning['direction_score']:+.2f} ({leading_warning['direction_label']})\n"
+        f"連続低下: {leading_warning['consecutive_declines']}か月\n"
+        f"3か月変化率: {leading_warning['three_month_change']:+.2f}%\n"
+        f"先行警戒: {leading_warning['warning_level']}\n\n"
         "【異常検知】\n"
         f"同時悪化: {simultaneous}\n"
         f"異常レベル: {anomaly_level}"
