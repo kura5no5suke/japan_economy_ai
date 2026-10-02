@@ -66,6 +66,9 @@ jobs:
       - name: Run machinery orders
         run: python machinery_orders.py
 
+      - name: Get leading index
+        run: python leading_index.py
+
       - name: Run coincident index
         run: python coincident_index.py
 

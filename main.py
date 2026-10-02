@@ -31,6 +31,7 @@ def main():
         ["py", "forex.py"],
         ["py", "industrial_production.py"],
         ["py", "machinery_orders.py"],
+        ["py", "leading_index.py"],
         ["py", "coincident_index.py"],
         ["py", "risk.py"],
         ["py", "ai_report.py"],
