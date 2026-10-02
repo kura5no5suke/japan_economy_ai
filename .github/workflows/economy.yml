@@ -75,6 +75,9 @@ jobs:
       - name: Run risk calculation
         run: python risk.py
 
+      - name: Run leading warning
+        run: python leading_warning.py
+
       - name: Run risk spike alert
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}

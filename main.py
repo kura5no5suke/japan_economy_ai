@@ -34,6 +34,7 @@ def main():
         ["py", "leading_index.py"],
         ["py", "coincident_index.py"],
         ["py", "risk.py"],
+        ["py", "leading_warning.py"],
         ["py", "ai_report.py"],
         ["py", "risk_spike_alert.py"],
     ]
