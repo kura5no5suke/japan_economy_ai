@@ -6,7 +6,7 @@ from risk import calculate_economic_trend, detect_simultaneous_deterioration
 from leading_warning import calculate_leading_warning
 
 
-DB_PATH = "data/economy.db"
+from db_config import DB_PATH
 
 load_dotenv()
 

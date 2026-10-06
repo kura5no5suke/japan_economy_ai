@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime
 
 
-DB_PATH = "data/economy.db"
+from db_config import DB_PATH
 
 
 def create_notification_state_table():

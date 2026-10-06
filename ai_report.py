@@ -14,7 +14,7 @@ from recession_signal import calculate_recession_signal
 from recession_signal_history import update_recession_signal_history
 from notification_state import evaluate_notification_state
 
-DB_PATH = "data/economy.db"
+from db_config import DB_PATH
 REPORT_DIR = "reports"
 
 CPI_INDICATOR = "CPI_総合_前年同月比"

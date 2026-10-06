@@ -6,7 +6,7 @@ from datetime import datetime
 from recession_signal import calculate_recession_signal
 
 
-DB_PATH = "data/economy.db"
+from db_config import DB_PATH
 
 
 # ============================================================

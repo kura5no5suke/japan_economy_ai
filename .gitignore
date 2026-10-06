@@ -56,3 +56,6 @@ copy
 data/economy_before_*.db
 data/economy_from_*.db
 data/economy_remote_*.db
+
+# Local development database
+data/economy_local.db

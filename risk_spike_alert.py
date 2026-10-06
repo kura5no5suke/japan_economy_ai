@@ -4,7 +4,7 @@ import requests
 from dotenv import load_dotenv
 
 
-DB_PATH = "data/economy.db"
+from db_config import DB_PATH
 SPIKE_THRESHOLD = 10.0
 
 load_dotenv()

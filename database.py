@@ -1,7 +1,7 @@
 import sqlite3
 import os
 
-DB_PATH = "data/economy.db"
+from db_config import DB_PATH
 
 
 def create_database():

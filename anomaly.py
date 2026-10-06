@@ -1,7 +1,7 @@
 import sqlite3
 import statistics
 
-DB_PATH = "data/economy.db"
+from db_config import DB_PATH
 
 INDICATOR = "CPI_総合_前年同月比"
 

@@ -3,7 +3,7 @@ import statistics
 from datetime import datetime
 
 
-DB_PATH = "data/economy.db"
+from db_config import DB_PATH
 
 CPI_INDICATOR = "CPI_総合_前年同月比"
 GDP_INDICATOR = "GDP_実質_前年同期比"

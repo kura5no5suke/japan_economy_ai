@@ -1,6 +1,6 @@
 import sqlite3
 
-DB_PATH = "data/economy.db"
+from db_config import DB_PATH
 
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
