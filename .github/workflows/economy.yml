@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: japan-economy-monitor
+  cancel-in-progress: false
+
 jobs:
   monitor:
     runs-on: ubuntu-latest
@@ -27,7 +31,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Create database
-        run: python -c "from database import create_database; create_database()"
+        run: |
+          python -c "from database import create_database; create_database()"
 
       - name: Run CPI
         env:
@@ -78,12 +83,18 @@ jobs:
       - name: Run leading warning
         run: python leading_warning.py
 
+      - name: Run recession signal V2
+        run: python recession_signal.py
+
+      - name: Save recession signal history
+        run: python recession_signal_history.py
+
       - name: Run risk spike alert
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python risk_spike_alert.py
 
-      - name: Send Discord notification
+      - name: Send state-change Discord notification
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python cloud_notify.py
@@ -92,6 +103,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add data/economy.db
-          git diff --cached --quiet || git commit -m "Update economy database"
+
+          if git diff --cached --quiet; then
+            echo "Database has no changes."
+            exit 0
+          fi
+
+          git commit -m "Update economy database"
+          git pull --rebase origin master
           git push
