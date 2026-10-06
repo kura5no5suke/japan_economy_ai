@@ -59,3 +59,39 @@ data/economy_remote_*.db
 
 # Local development database
 data/economy_local.db
+# ========================================
+# 旧8指標版
+# ========================================
+*_8_indicators.py
+economy_8_indicators.yml
+
+# ========================================
+# 古い景気後退モデル
+# ========================================
+recession_risk.py
+recession_risk_backtest.py
+recession_risk_backtest_v2.py
+
+# ========================================
+# 手動テスト用
+# ========================================
+discord_test.py
+discord_risk_spike_test.py
+risk_spike_test.py
+industrial_production_meta_test.py
+
+# ========================================
+# 一時取得・調査ファイル
+# ========================================
+ci_longterm.xlsx
+di_page.html
+
+# ========================================
+# 一回限りの移行スクリプト
+# ========================================
+update_db_paths.py
+
+# ========================================
+# 古いWorkflowバックアップ
+# ========================================
+.github/workflows/economy_before_*.yml
