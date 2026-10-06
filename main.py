@@ -2,18 +2,23 @@ import subprocess
 import sys
 
 
-def run_step(command):
+PYTHON = sys.executable
+
+
+def run_step(script_name):
     print()
     print("=" * 60)
-    print("実行:", " ".join(command))
+    print("実行:", script_name)
     print("=" * 60)
 
-    result = subprocess.run(command)
+    result = subprocess.run(
+        [PYTHON, script_name]
+    )
 
     if result.returncode != 0:
         print()
         print("エラーが発生しました。")
-        print("停止した処理:", " ".join(command))
+        print("停止した処理:", script_name)
         sys.exit(result.returncode)
 
 
@@ -22,28 +27,57 @@ def main():
     print("===== 日本経済監視AI 開始 =====")
 
     steps = [
-        ["py", "estat.py"],
-        ["py", "gdp.py"],
-        ["py", "unemployment.py"],
-        ["py", "real_wage.py"],
-        ["py", "consumption.py"],
-        ["py", "boj.py"],
-        ["py", "forex.py"],
-        ["py", "industrial_production.py"],
-        ["py", "machinery_orders.py"],
-        ["py", "leading_index.py"],
-        ["py", "coincident_index.py"],
-        ["py", "risk.py"],
-        ["py", "leading_warning.py"],
-        ["py", "ai_report.py"],
-        ["py", "risk_spike_alert.py"],
+        # ----------------------------------------
+        # 経済データ取得
+        # ----------------------------------------
+        "estat.py",
+        "gdp.py",
+        "unemployment.py",
+        "real_wage.py",
+        "consumption.py",
+        "boj.py",
+        "forex.py",
+        "industrial_production.py",
+        "machinery_orders.py",
+        "leading_index.py",
+        "coincident_index.py",
+
+        # ----------------------------------------
+        # 分析
+        # ----------------------------------------
+        "risk.py",
+        "leading_warning.py",
+
+        # ----------------------------------------
+        # 景気後退シグナル V2
+        # ----------------------------------------
+        "recession_signal.py",
+
+        # ----------------------------------------
+        # AIレポート・警告
+        # ----------------------------------------
+        "ai_report.py",
+        "risk_spike_alert.py",
     ]
 
-    for step in steps:
-        run_step(step)
+    total_steps = len(steps)
+
+    for index, script_name in enumerate(
+        steps,
+        start=1,
+    ):
+        print()
+        print(
+            f"[{index}/{total_steps}] "
+            f"{script_name}"
+        )
+
+        run_step(script_name)
 
     print()
+    print("=" * 60)
     print("===== 日本経済監視AI 完了 =====")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,9 @@ from risk import (
 )
 
 from leading_warning import calculate_leading_warning
+from recession_signal import calculate_recession_signal
+from recession_signal_history import update_recession_signal_history
+from notification_state import evaluate_notification_state
 
 DB_PATH = "data/economy.db"
 REPORT_DIR = "reports"
@@ -737,6 +740,76 @@ def calculate_risk_change(
     return change, status
 
 
+
+def build_recession_signal_text(
+    recession_signal
+):
+    leading = recession_signal[
+        "leading"
+    ]
+
+    confirmation = recession_signal[
+        "confirmation"
+    ]
+
+    return (
+        f"先行警戒: "
+        f"{leading['warning_level']}\n"
+        f"実体経済確認: "
+        f"{confirmation['status']}\n"
+        f"確認スコア: "
+        f"{confirmation['confirmation_score']} / 100\n"
+        f"40点以上: "
+        f"{confirmation['deteriorated_count']} / "
+        f"{confirmation['available_count']}指標\n"
+        f"60点以上: "
+        f"{confirmation['severe_count']} / "
+        f"{confirmation['available_count']}指標\n"
+        f"データ信頼度: "
+        f"{confirmation['data_confidence']}\n"
+        f"景気トレンド: "
+        f"{confirmation['trend_status']} "
+        f"({confirmation['trend_score']:+.2f})\n"
+        f"最終判定: "
+        f"{recession_signal['final_status']}\n"
+        f"判断: "
+        f"{recession_signal['final_message']}\n"
+        f"参考スコア: "
+        f"{recession_signal['reference_score']} / 100"
+    )
+
+
+def is_recession_signal_alert(
+    recession_signal
+):
+    return not recession_signal[
+        "final_status"
+    ].startswith("🟢")
+
+
+def get_discord_icon(
+    recession_signal,
+    anomaly_alert
+):
+    status = recession_signal[
+        "final_status"
+    ]
+
+    if status.startswith("🔴"):
+        return "🚨"
+
+    if status.startswith("🟠"):
+        return "⚠️"
+
+    if status.startswith("🟡"):
+        return "🟡"
+
+    if anomaly_alert:
+        return "🚨"
+
+    return "📊"
+
+
 def build_prompt(
     facts,
     current_risk,
@@ -749,7 +822,8 @@ def build_prompt(
     trend_improving,
     trend_worsening,
     trend_mixed,
-    leading_warning
+    leading_warning,
+    recession_signal
 ):
     if previous_risk is None:
         previous_risk_text = "データなし"
@@ -770,6 +844,12 @@ def build_prompt(
         risk_change_display = "比較なし"
     else:
         risk_change_display = f"{risk_change_text}ポイント"
+
+    recession_signal_text = (
+        build_recession_signal_text(
+            recession_signal
+        )
+    )
 
     prompt = f"""
 あなたは日本経済監視AIです。
@@ -803,6 +883,10 @@ def build_prompt(
 - 景気動向指数の上昇・低下だけから原因を推測しない。
 - 判断理由はPython生成済みの文章をそのまま使用する。
 - 判断理由の文章を書き換えない。
+- 景気後退シグナルV2はPython生成済みの判定をそのまま使用する。
+- 景気後退シグナルV2の先行警戒、実体経済確認、最終判定、判断を書き換えない。
+- 参考スコアを景気後退確率として表現しない。
+- 10指標総合評価と景気後退シグナルV2を同じ判定として扱わない。
 - 思考過程を出力しない。
 - 完成したレポートだけを出力する。
 
@@ -884,6 +968,11 @@ CI先行指数: {leading_warning["latest_value"]} (2020年=100)
 先行警戒: {leading_warning["warning_level"]}
 ※この先行警戒はCI先行指数の動きからPythonで算出した独自の早期警戒判定であり、将来予測や内閣府の公式な景気判定ではない。
 
+【景気後退シグナル V2】
+{recession_signal_text}
+※先行警戒は将来の減速兆候、実体経済確認は現在の悪化状況として別軸で評価した独自判定である。
+※参考スコアは旧加重平均方式の参考値であり、景気後退確率ではない。
+
 【出力形式】
 
 【日本経済監視レポート】
@@ -957,7 +1046,10 @@ CI先行指数: {leading_warning["latest_value"]} (2020年=100)
 3か月変化率: {leading_warning["three_month_change"]:+.2f}%
 先行警戒: {leading_warning["warning_level"]}
 
-■ 総合評価
+■ 景気後退シグナル V2
+{recession_signal_text}
+
+■ 10指標総合評価
 {current_risk['economic_condition']}
 
 ■ 判断理由
@@ -1414,7 +1506,29 @@ def main():
         for name, score, label in trend_detail_rows
     )
 
-    leading_warning = calculate_leading_warning()
+    recession_signal = (
+        calculate_recession_signal()
+    )
+
+    if recession_signal is None:
+        raise RuntimeError(
+            "景気後退シグナルV2を"
+            "計算できませんでした。"
+        )
+
+    leading_warning = recession_signal[
+        "leading"
+    ]
+
+    print()
+    print(
+        "===== 景気後退シグナル V2 ====="
+    )
+    print(
+        build_recession_signal_text(
+            recession_signal
+        )
+    )
 
     reason_text = build_reason_text(
         facts,
@@ -1433,7 +1547,8 @@ def main():
         trend_improving,
         trend_worsening,
         trend_mixed,
-    leading_warning
+        leading_warning,
+        recession_signal
     )
 
     print()
@@ -1453,6 +1568,24 @@ def main():
 
         return
 
+    recession_signal_text = (
+        build_recession_signal_text(
+            recession_signal
+        )
+    )
+
+    if (
+        "■ 景気後退シグナル V2"
+        not in report
+    ):
+        report = (
+            report.rstrip()
+            + "\n\n"
+            + "■ 景気後退シグナル V2\n"
+            + recession_signal_text
+            + "\n"
+        )
+
     file_path = save_report(
         report
     )
@@ -1471,35 +1604,153 @@ def main():
         "===== Discord通知判定 ====="
     )
 
-    if (
-        current_risk["anomaly_level"]
-        != "🟢 通常"
-    ):
-        message = (
-            "🚨 日本経済監視AI 異常検知\n\n"
-            f"総合リスク: "
-            f"{current_risk['total_risk']} / 100\n"
-            f"総合判定: "
-            f"{current_risk['risk_status']}\n"
-            f"異常レベル: "
-            f"{current_risk['anomaly_level']}\n"
-            f"同時悪化: {simultaneous}\n"
-            f"景気トレンド: {trend_status} "
-            f"({trend_score:+.2f})\n\n"
-            f"レポート: "
-            f"{os.path.basename(file_path)}"
+    signal_history = (
+        update_recession_signal_history()
+    )
+
+    if signal_history.get("success"):
+        signal_current = (
+            signal_history["current"]
+        )
+    else:
+        signal_current = None
+
+        print(
+            "景気後退シグナル履歴の"
+            "更新に失敗しました:"
         )
 
-        send_discord(
-            message
+        print(
+            signal_history.get(
+                "reason",
+                "不明なエラー",
+            )
         )
+
+    notification = (
+        evaluate_notification_state(
+            current_risk,
+            signal_current,
+        )
+    )
+
+    if notification["is_first"]:
+        print(
+            "🆕 Discord通知状態を"
+            "初期登録しました。"
+        )
+
+        print(
+            "初回登録では通知しません。"
+        )
+
+    elif notification["has_change"]:
+        print(
+            "⚠ 前回実行時から"
+            "主要判定が変化しました。"
+        )
+
+        for change in notification[
+            "changes"
+        ]:
+            print(
+                "  ・",
+                change,
+            )
+
+        change_text = "\n".join(
+            f"・{change}"
+            for change in notification[
+                "changes"
+            ]
+        )
+
+        message_parts = [
+            "🚨 日本経済監視AI 状態変化",
+            "",
+            "【前回実行時からの変化】",
+            change_text,
+            "",
+            "【10指標】",
+            (
+                "総合リスク: "
+                f"{current_risk['total_risk']} / 100"
+            ),
+            (
+                "総合判定: "
+                f"{current_risk['risk_status']}"
+            ),
+            (
+                "異常レベル: "
+                f"{current_risk['anomaly_level']}"
+            ),
+            (
+                f"同時悪化: {simultaneous}"
+            ),
+            (
+                "景気トレンド: "
+                f"{trend_status} "
+                f"({trend_score:+.2f})"
+            ),
+        ]
+
+        if signal_current is not None:
+            message_parts.extend(
+                [
+                    "",
+                    "【景気後退シグナル V2】",
+                    (
+                        "先行警戒: "
+                        f"{signal_current['leading_warning']}"
+                    ),
+                    (
+                        "実体経済確認: "
+                        f"{signal_current['confirmation_status']}"
+                    ),
+                    (
+                        "40点以上: "
+                        f"{signal_current['deteriorated_count']}"
+                        " / "
+                        f"{signal_current['available_count']}"
+                        "指標"
+                    ),
+                    (
+                        "データ信頼度: "
+                        f"{signal_current['data_confidence']}"
+                    ),
+                    (
+                        "最終判定: "
+                        f"{signal_current['final_status']}"
+                    ),
+                    (
+                        "判断: "
+                        f"{signal_current['final_message']}"
+                    ),
+                ]
+            )
+
+        message_parts.extend(
+            [
+                "",
+                (
+                    "レポート: "
+                    f"{os.path.basename(file_path)}"
+                ),
+            ]
+        )
+
+        message = "\n".join(
+            message_parts
+        )
+
+        send_discord(message)
 
     else:
         print(
-            "通常状態のため"
+            "🟢 前回実行時から主要判定に"
+            "変化がないため、"
             "Discord通知はありません。"
         )
-
 
 if __name__ == "__main__":
     main()
