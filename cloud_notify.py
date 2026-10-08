@@ -305,13 +305,14 @@ def build_compact_daily_embed(
                 "inline": False,
             },
             {
-                "name": "🔥 リスク上位3",
+                "name": "📊 10指標リスク",
                 "value": (
-                    build_top_risk_text(
-                        current_risk,
-                        limit=3,
+                    build_all_risk_text(
+                        current_risk
                     )
-                    or "データなし"
+                    + "\n"
+                    f"**総合リスク**　`{current_risk['total_risk']:.2f} / 100`\n"
+                    f"**総合判定**　{current_risk['risk_status']}"
                 ),
                 "inline": False,
             },
