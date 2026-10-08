@@ -241,6 +241,33 @@ def rule_leading_and_severe(
     )
 
 
+def rule_leading_deteriorated_severe(
+    result,
+    minimum_leading,
+    minimum_deteriorated,
+    minimum_severe,
+):
+    """
+    CI先行警戒に加えて、
+    40点以上の悪化指標数と
+    60点以上の重度悪化指標数を
+    同時に要求する確認ルール。
+    """
+
+    return (
+        leading_rank(result)
+        >= minimum_leading
+        and result[
+            "deteriorated_count"
+        ]
+        >= minimum_deteriorated
+        and result[
+            "severe_count"
+        ]
+        >= minimum_severe
+    )
+
+
 def rule_balanced_confirmed(
     result,
 ):
@@ -1070,7 +1097,52 @@ def build_candidate_rules():
             )
 
     # --------------------------------------------------------
-    # 5. 意味重視の複合候補
+    # 5. 先行 + 40点以上 + 60点以上
+    #
+    # 2014年の赤い空振りを減らしつつ、
+    # 2012年・2018年の赤判定を維持できるかを検証する。
+    # --------------------------------------------------------
+
+    for minimum_leading in [
+        1,
+        2,
+        3,
+    ]:
+        for minimum_deteriorated in [
+            1,
+            2,
+        ]:
+            for minimum_severe in [
+                1,
+                2,
+            ]:
+                label = (
+                    f"CI>={minimum_leading} "
+                    f"AND 悪化>="
+                    f"{minimum_deteriorated} "
+                    f"AND 60点以上>="
+                    f"{minimum_severe}"
+                )
+
+                candidates.append(
+                    (
+                        label,
+                        lambda row,
+                        l=minimum_leading,
+                        d=minimum_deteriorated,
+                        s=minimum_severe: (
+                            rule_leading_deteriorated_severe(
+                                row,
+                                l,
+                                d,
+                                s,
+                            )
+                        ),
+                    )
+                )
+
+    # --------------------------------------------------------
+    # 6. 意味重視の複合候補
     # --------------------------------------------------------
 
     candidates.append(
@@ -1300,6 +1372,92 @@ def print_false_period_features(
 
 
 # ============================================================
+# 2008年と2014年の月次比較
+# ============================================================
+
+def print_target_period_comparison(
+    results,
+):
+    print()
+    print(
+        "===== 2008年直前と2014年の月次比較 ====="
+    )
+
+    target_periods = [
+        (
+            "2008年 景気の山直前",
+            "2007-02",
+            "2008-02",
+        ),
+        (
+            "2014年 空振り期間",
+            "2014-01",
+            "2014-12",
+        ),
+    ]
+
+    candidate_rule = (
+        lambda row: (
+            rule_leading_deteriorated_severe(
+                row,
+                minimum_leading=1,
+                minimum_deteriorated=2,
+                minimum_severe=1,
+            )
+        )
+    )
+
+    for (
+        label,
+        start_date,
+        end_date,
+    ) in target_periods:
+        print()
+        print(
+            f"--- {label} ---"
+        )
+
+        rows = [
+            row
+            for row in results
+            if (
+                month_number(start_date)
+                <= month_number(
+                    row["date"]
+                )
+                <= month_number(end_date)
+            )
+        ]
+
+        if not rows:
+            print(
+                "対象データなし"
+            )
+            continue
+
+        for row in rows:
+            active = (
+                candidate_rule(row)
+            )
+
+            marker = (
+                "★候補ルール成立"
+                if active
+                else ""
+            )
+
+            print(
+                f"{row['date']} "
+                f"CI={leading_rank(row)} "
+                f"悪化={row['deteriorated_count']} "
+                f"重度={row['severe_count']} "
+                f"確認={row['confirmation_score']:.2f} "
+                f"Trend={row['trend_score']:+.2f} "
+                f"{marker}"
+            )
+
+
+# ============================================================
 # 推奨ルールの詳細
 # ============================================================
 
@@ -1457,6 +1615,10 @@ def main():
         results
     )
 
+    print_target_period_comparison(
+        results
+    )
+
     ranked_all = (
         print_ranked_candidates(
             results,
@@ -1497,6 +1659,30 @@ def main():
             minimum_coverage=5,
             title=(
                 "高カバレッジ F1最大候補"
+            ),
+        )
+
+    severe_confirmed = None
+
+    for candidate in ranked_high:
+        if (
+            candidate["label"]
+            == (
+                "CI>=1 AND 悪化>=2 "
+                "AND 60点以上>=1"
+            )
+        ):
+            severe_confirmed = candidate
+            break
+
+    if severe_confirmed is not None:
+        print_candidate_detail(
+            results,
+            severe_confirmed,
+            minimum_coverage=5,
+            title=(
+                "新候補 "
+                "CI警戒+悪化2+重度1"
             ),
         )
 
