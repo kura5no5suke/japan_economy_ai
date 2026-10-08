@@ -1101,6 +1101,48 @@ def print_peak_paths(results):
         )
 
 
+def get_pre_peak_event_highest(
+    results,
+    event,
+    minimum_rank,
+):
+    """
+    検知イベントが景気の山をまたいで継続した場合でも、
+    表示用の「最高判定」は山より前の月だけで計算する。
+
+    TP/FP/FNなどのイベント分類ロジック自体は変更しない。
+    """
+
+    peak = event.get("peak")
+
+    if not peak:
+        return None
+
+    start_number = month_number(
+        event["start_date"]
+    )
+
+    peak_number = month_number(
+        peak
+    )
+
+    rows = [
+        result
+        for result in results
+        if (
+            start_number
+            <= month_number(
+                result["date"]
+            )
+            < peak_number
+            and result["final_rank"]
+            >= minimum_rank
+        )
+    ]
+
+    return max_rank_result(rows)
+
+
 def print_metrics(
     results,
     minimum_rank,
@@ -1167,13 +1209,43 @@ def print_metrics(
         for event in stats[
             "hits"
         ]:
+            highest_before_peak = (
+                get_pre_peak_event_highest(
+                    results,
+                    event,
+                    minimum_rank,
+                )
+            )
+
+            if highest_before_peak is None:
+                highest_status = (
+                    event["max_status"]
+                )
+                highest_date = None
+            else:
+                highest_status = (
+                    highest_before_peak[
+                        "final_status"
+                    ]
+                )
+                highest_date = (
+                    highest_before_peak[
+                        "date"
+                    ]
+                )
+
             print(
                 f"  {event['peak']} "
                 f"← "
                 f"{event['start_date']} "
                 f"({event['months_before']}か月前) "
-                f"最高="
-                f"{event['max_status']}"
+                f"最高(山の前)="
+                f"{highest_status}"
+                + (
+                    f" ({highest_date})"
+                    if highest_date
+                    else ""
+                )
             )
 
     return stats
@@ -1337,6 +1409,12 @@ def main():
     print(
         "※1985-06はCI先行データ開始直後のため、"
         "12か月前評価はできません。"
+    )
+
+    print(
+        "※検知一覧の「最高(山の前)」は、"
+        "イベントが山をまたいでも"
+        "山より前の月だけで集計します。"
     )
 
     print_recent(
