@@ -369,6 +369,14 @@ def build_compact_daily_embed(
     signal_current,
     notification,
 ):
+    """
+    通常時レポート。
+
+    Discord Embed内では ## / ### の見出し記法が
+    大きな見出しとして表示されないため、
+    大きく見せたい各セクションを独立したEmbedにして
+    titleとして表示する。
+    """
     now = datetime.now(JST)
 
     color = get_status_color(
@@ -394,11 +402,23 @@ def build_compact_daily_embed(
             "引き続き確認します。"
         )
 
-    details = (
-        build_all_risk_text(
-            current_risk
-        )
-        + "\n\n"
+    attention_text = build_attention_points(
+        current_risk,
+        signal_current,
+    )
+
+    life_impact_text = (
+        "• 食料品や日用品の価格\n"
+        "• 給料と物価のバランス\n"
+        "• 住宅ローンや預金金利\n"
+        "• 仕事や企業の業績"
+    )
+
+    risk_details = build_all_risk_text(
+        current_risk
+    )
+
+    total_risk_text = (
         f"**総合リスク**　"
         f"`{current_risk['total_risk']:.2f} / 100`\n"
         f"**総合判定**　"
@@ -409,95 +429,89 @@ def build_compact_daily_embed(
         f"{current_risk['anomaly_level']}"
     )
 
-    recession_details = (
+    recession_text = (
         f"**最終判定**　"
         f"{signal_current['final_status']}\n"
         f"**先行警戒**　"
         f"{signal_current['leading_warning']}\n"
         f"**実体経済確認**　"
         f"{signal_current['confirmation_status']}\n"
-        f"**40点以上** "
+        f"**40点以上**　"
         f"`{signal_current['deteriorated_count']} / "
-        f"{signal_current['available_count']}`　"
-        f"**60点以上** "
+        f"{signal_current['available_count']}`\n"
+        f"**60点以上**　"
         f"`{signal_current['severe_count']} / "
         f"{signal_current['available_count']}`"
     )
 
     trend_text = (
-        f"{trend_status}　`{trend_score:+.2f}`\n"
-        f"改善 `{trend_improving}` / "
+        f"**判定**　{trend_status}\n"
+        f"**スコア**　`{trend_score:+.2f}`\n"
+        f"**内訳**　改善 `{trend_improving}` / "
         f"悪化 `{trend_worsening}` / "
         f"中立 `{trend_mixed}`\n"
-        f"同時悪化: {simultaneous}"
+        f"**同時悪化**　{simultaneous}"
     )
 
-    return {
-        "title": "🇯🇵 今日の日本経済レポート",
-        "description": (
-            f"**{now:%Y年%m月%d日}**"
-        ),
-        "color": color,
-        "fields": [
-            {
-                "name": "🧭 総合評価",
-                "value": (
-                    f"**リスクスコア**　"
-                    f"`{current_risk['total_risk']:.2f} / 100`\n"
-                    f"{summary_text}"
-                ),
-                "inline": False,
-            },
-            {
-                "name": "🔎 今日の注目ポイント",
-                "value": build_attention_points(
-                    current_risk,
-                    signal_current,
-                ),
-                "inline": False,
-            },
-            {
-                "name": "🏠 私たちの生活への影響",
-                "value": (
-                    "• 食料品や日用品の価格\n"
-                    "• 給料と物価のバランス\n"
-                    "• 住宅ローンや預金金利\n"
-                    "• 仕事や企業の業績"
-                ),
-                "inline": False,
-            },
-            {
-                "name": "📊 詳細データ｜10指標",
-                "value": details,
-                "inline": False,
-            },
-            {
-                "name": "📉 景気後退 V2",
-                "value": recession_details,
-                "inline": False,
-            },
-            {
-                "name": "📈 景気トレンド",
-                "value": trend_text,
-                "inline": False,
-            },
-            {
-                "name": "🔄 前回との比較",
-                "value": build_change_summary(
-                    notification
-                ),
-                "inline": False,
-            },
-        ],
-        "footer": {
-            "text": (
-                "本レポートは経済指標をもとにした"
-                "参考情報です。将来の景気や投資成果を"
-                "保証するものではありません。"
-            )
+    change_text = build_change_summary(
+        notification
+    )
+
+    return [
+        {
+            "title": "🇯🇵 今日の日本経済レポート",
+            "description": (
+                f"**{now:%Y年%m月%d日}**\n\n"
+                f"**リスクスコア**　"
+                f"`{current_risk['total_risk']:.2f} / 100`\n"
+                f"{summary_text}"
+            ),
+            "color": color,
         },
-        "timestamp": now.isoformat(),
-    }
+        {
+            "title": "🔎 今日の注目ポイント",
+            "description": attention_text,
+            "color": color,
+        },
+        {
+            "title": "🏠 私たちの生活への影響",
+            "description": life_impact_text,
+            "color": color,
+        },
+        {
+            "title": "📊 詳細データ｜10指標",
+            "description": risk_details,
+            "color": color,
+        },
+        {
+            "title": "🧭 総合リスク",
+            "description": total_risk_text,
+            "color": color,
+        },
+        {
+            "title": "📉 景気後退 V2",
+            "description": recession_text,
+            "color": color,
+        },
+        {
+            "title": "📈 景気トレンド",
+            "description": trend_text,
+            "color": color,
+            "footer": {
+                "text": (
+                    "本レポートは経済指標をもとにした"
+                    "参考情報です。将来の景気や投資成果を"
+                    "保証するものではありません。"
+                )
+            },
+            "timestamp": now.isoformat(),
+        },
+        {
+            "title": "🔄 前回との比較",
+            "description": change_text,
+            "color": color,
+        },
+    ]
 
 
 
@@ -735,7 +749,10 @@ def send_discord(
         payload["content"] = content
 
     if embed:
-        payload["embeds"] = [embed]
+        if isinstance(embed, list):
+            payload["embeds"] = embed
+        else:
+            payload["embeds"] = [embed]
 
     try:
         response = requests.post(
