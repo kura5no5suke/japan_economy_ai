@@ -255,6 +255,109 @@ def has_major_alert_state(
     )
 
 
+def describe_total_risk(total_risk):
+    if total_risk < 25:
+        return "総合リスクは低め"
+
+    if total_risk < 40:
+        return "総合リスクはやや低め"
+
+    if total_risk < 60:
+        return "総合リスクは注意水準"
+
+    if total_risk < 80:
+        return "総合リスクは高め"
+
+    return "総合リスクは非常に高い"
+
+
+def build_attention_points(
+    current_risk,
+    signal_current,
+):
+    boj = current_risk["boj_rate_risk"]
+    usd_jpy = current_risk["usd_jpy_risk"]
+
+    if boj >= 60:
+        rate_title = "🔴 金利：要確認"
+        rate_text = (
+            f"日銀金利のリスクスコアが "
+            f"`{boj:.2f}`。"
+            "金利上昇による住宅ローン、"
+            "企業の借入・投資への影響に注意します。"
+        )
+    elif boj >= 40:
+        rate_title = "🟠 金利：注意"
+        rate_text = (
+            f"日銀金利のリスクスコアは "
+            f"`{boj:.2f}`。"
+            "金利環境の変化を継続して確認します。"
+        )
+    else:
+        rate_title = "🟢 金利：大きな警戒なし"
+        rate_text = (
+            f"日銀金利のリスクスコアは "
+            f"`{boj:.2f}`。"
+            "現時点では強い金利警戒は出ていません。"
+        )
+
+    if usd_jpy >= 60:
+        fx_title = "🔴 為替：強い警戒"
+        fx_text = (
+            f"ドル円リスクは `{usd_jpy:.2f}`。"
+            "急な為替変動による輸入価格や"
+            "企業業績への影響に注意が必要です。"
+        )
+    elif usd_jpy >= 40:
+        fx_title = "🟠 為替：注意"
+        fx_text = (
+            f"ドル円リスクは `{usd_jpy:.2f}`。"
+            "為替変動と輸入価格への影響を確認します。"
+        )
+    elif usd_jpy >= 25:
+        fx_title = "🟡 為替：継続観察"
+        fx_text = (
+            f"ドル円リスクは `{usd_jpy:.2f}`。"
+            "ドル円の動きと、輸入品価格や"
+            "企業業績への影響を継続して確認します。"
+        )
+    else:
+        fx_title = "🟢 為替：大きな警戒なし"
+        fx_text = (
+            f"ドル円リスクは `{usd_jpy:.2f}`。"
+            "現時点では強い為替警戒は出ていません。"
+        )
+
+    final_rank = status_rank(
+        signal_current["final_status"]
+    )
+
+    if final_rank >= 3:
+        economy_title = "🔴 景気：強い警戒"
+    elif final_rank == 2:
+        economy_title = "🟠 景気：警戒"
+    elif final_rank == 1:
+        economy_title = "🟡 景気：注意"
+    else:
+        economy_title = (
+            "🟢 景気：現時点では"
+            "強い警戒シグナルなし"
+        )
+
+    economy_text = (
+        f"景気後退V2は "
+        f"**{signal_current['final_status']}**。"
+        "GDP、雇用、賃金、消費、"
+        "生産など複数の指標を組み合わせて判断しています。"
+    )
+
+    return (
+        f"**{rate_title}**\n{rate_text}\n\n"
+        f"**{fx_title}**\n{fx_text}\n\n"
+        f"**{economy_title}**\n{economy_text}"
+    )
+
+
 def build_compact_daily_embed(
     current_risk,
     simultaneous,
@@ -274,61 +377,112 @@ def build_compact_daily_embed(
         signal_current["final_status"],
     )
 
+    risk_summary = describe_total_risk(
+        current_risk["total_risk"]
+    )
+
+    if current_risk["boj_rate_risk"] >= 40:
+        summary_text = (
+            f"現時点のAI評価では、{risk_summary}。"
+            "ただし、金利関連の指標には"
+            "注意が必要です。"
+        )
+    else:
+        summary_text = (
+            f"現時点のAI評価では、{risk_summary}。"
+            "大きな警戒シグナルがないか"
+            "引き続き確認します。"
+        )
+
+    details = (
+        build_all_risk_text(
+            current_risk
+        )
+        + "\n\n"
+        f"**総合リスク**　"
+        f"`{current_risk['total_risk']:.2f} / 100`\n"
+        f"**総合判定**　"
+        f"{current_risk['risk_status']}\n"
+        f"**10指標評価**　"
+        f"{current_risk['economic_condition']}\n"
+        f"**異常レベル**　"
+        f"{current_risk['anomaly_level']}"
+    )
+
+    recession_details = (
+        f"**最終判定**　"
+        f"{signal_current['final_status']}\n"
+        f"**先行警戒**　"
+        f"{signal_current['leading_warning']}\n"
+        f"**実体経済確認**　"
+        f"{signal_current['confirmation_status']}\n"
+        f"**40点以上** "
+        f"`{signal_current['deteriorated_count']} / "
+        f"{signal_current['available_count']}`　"
+        f"**60点以上** "
+        f"`{signal_current['severe_count']} / "
+        f"{signal_current['available_count']}`"
+    )
+
+    trend_text = (
+        f"{trend_status}　`{trend_score:+.2f}`\n"
+        f"改善 `{trend_improving}` / "
+        f"悪化 `{trend_worsening}` / "
+        f"中立 `{trend_mixed}`\n"
+        f"同時悪化: {simultaneous}"
+    )
+
     return {
-        "title": "📊 日本経済監視AI｜定期レポート",
+        "title": "🇯🇵 今日の日本経済レポート",
         "description": (
-            f"**{now:%Y年%m月%d日 %H:%M} JST**"
+            f"**{now:%Y年%m月%d日}**"
         ),
         "color": color,
         "fields": [
             {
-                "name": "🧭 総合状況",
+                "name": "🧭 総合評価",
                 "value": (
-                    f"**総合リスク**　`{current_risk['total_risk']:.2f} / 100`\n"
-                    f"**総合判定**　{current_risk['risk_status']}\n"
-                    f"**10指標評価**　{current_risk['economic_condition']}\n"
-                    f"**異常レベル**　{current_risk['anomaly_level']}"
+                    f"**リスクスコア**　"
+                    f"`{current_risk['total_risk']:.2f} / 100`\n"
+                    f"{summary_text}"
                 ),
+                "inline": False,
+            },
+            {
+                "name": "🔎 今日の注目ポイント",
+                "value": build_attention_points(
+                    current_risk,
+                    signal_current,
+                ),
+                "inline": False,
+            },
+            {
+                "name": "🏠 私たちの生活への影響",
+                "value": (
+                    "• 食料品や日用品の価格\n"
+                    "• 給料と物価のバランス\n"
+                    "• 住宅ローンや預金金利\n"
+                    "• 仕事や企業の業績"
+                ),
+                "inline": False,
+            },
+            {
+                "name": "📊 詳細データ｜10指標",
+                "value": details,
                 "inline": False,
             },
             {
                 "name": "📉 景気後退 V2",
-                "value": (
-                    f"**最終判定**　{signal_current['final_status']}\n"
-                    f"**先行警戒**　{signal_current['leading_warning']}\n"
-                    f"**実体経済確認**　{signal_current['confirmation_status']}\n"
-                    f"**40点以上** `{signal_current['deteriorated_count']} / "
-                    f"{signal_current['available_count']}`　"
-                    f"**60点以上** `{signal_current['severe_count']} / "
-                    f"{signal_current['available_count']}`"
-                ),
+                "value": recession_details,
                 "inline": False,
             },
             {
-                "name": "📊 10指標リスク",
-                "value": (
-                    build_all_risk_text(
-                        current_risk
-                    )
-                    + "\n"
-                    f"**総合リスク**　`{current_risk['total_risk']:.2f} / 100`\n"
-                    f"**総合判定**　{current_risk['risk_status']}"
-                ),
+                "name": "📈 景気トレンド",
+                "value": trend_text,
                 "inline": False,
             },
             {
-                "name": "📈 トレンド",
-                "value": (
-                    f"{trend_status}　`{trend_score:+.2f}`\n"
-                    f"改善 `{trend_improving}` / "
-                    f"悪化 `{trend_worsening}` / "
-                    f"中立 `{trend_mixed}`\n"
-                    f"同時悪化: {simultaneous}"
-                ),
-                "inline": False,
-            },
-            {
-                "name": "🔄 前回比",
+                "name": "🔄 前回との比較",
                 "value": build_change_summary(
                     notification
                 ),
@@ -337,12 +491,14 @@ def build_compact_daily_embed(
         ],
         "footer": {
             "text": (
-                "Japan Economy Monitor | "
-                "通常時はコンパクト表示"
+                "本レポートは経済指標をもとにした"
+                "参考情報です。将来の景気や投資成果を"
+                "保証するものではありません。"
             )
         },
         "timestamp": now.isoformat(),
     }
+
 
 
 def build_detailed_daily_embed(
