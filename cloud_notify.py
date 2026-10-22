@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 from dotenv import load_dotenv
+from money_news import get_money_news_embeds
 
 from db_config import DB_PATH
 from notification_state import evaluate_notification_state
@@ -876,6 +877,13 @@ def main():
         signal_current["final_status"],
     )
 
+    print()
+    print(
+        "===== お金・経済ニュース ====="
+    )
+
+    news_embeds = get_money_news_embeds()
+
     major_alert_state = (
         has_major_alert_state(
             current_risk,
@@ -931,6 +939,32 @@ def main():
                 notification,
             )
         )
+
+    # MONEY_NEWS_INSERT
+    # 「今日の注目ポイント」の後ろにニュースを追加
+    if news_embeds:
+        if isinstance(
+            daily_embed,
+            list,
+        ):
+            insert_index = min(
+                2,
+                len(daily_embed),
+            )
+
+            daily_embed = (
+                daily_embed[:insert_index]
+                + news_embeds
+                + daily_embed[insert_index:]
+            )
+        else:
+            daily_embed = (
+                [daily_embed]
+                + news_embeds
+            )
+
+        # Discordは1メッセージ最大10 Embed
+        daily_embed = daily_embed[:10]
 
     daily_sent = send_discord(
         embed=daily_embed
